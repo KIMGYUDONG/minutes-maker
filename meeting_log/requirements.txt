@@ -1,0 +1,23 @@
+# Core Web Framework
+streamlit==1.29.0
+
+# Audio Processing
+openai-whisper==20231117
+# torch==2.1.2
+# torchaudio==2.1.2
+pydub==0.25.1
+
+# Voice Activity Detection
+silero-vad
+
+# LLM Integration
+google-generativeai==0.3.2
+
+# Audio Backend
+soundfile
+
+# Notion API
+notion-client==2.2.1
+
+# Utilities
+python-dotenv==1.0.0

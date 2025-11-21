@@ -1,0 +1,275 @@
+"""Audio processing module using Whisper and silero-VAD."""
+
+import warnings
+warnings.filterwarnings("ignore")
+
+import torch
+import whisper
+from pathlib import Path
+from typing import Optional, Callable
+import torchaudio
+# Set backend to soundfile for Windows compatibility
+try:
+    torchaudio.set_audio_backend("soundfile")
+except Exception:
+    pass # Fallback or already set
+
+from pydub import AudioSegment
+from silero_vad import load_silero_vad, get_speech_timestamps
+
+from config import Config
+from utils import format_timestamp
+
+
+class AudioProcessor:
+    """Handles audio transcription with Whisper and VAD."""
+    
+    def __init__(self, progress_callback: Optional[Callable] = None):
+        """
+        Initialize the audio processor.
+        
+        Args:
+            progress_callback: Optional callback function for progress updates
+        """
+        self.progress_callback = progress_callback
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = None
+        self.vad_model = None
+        self.current_model_name = None
+        
+        self._update_progress("Initializing audio processor...")
+    
+    def _update_progress(self, message: str):
+        """Update progress via callback if available."""
+        if self.progress_callback:
+            self.progress_callback(message)
+    
+    def _load_vad_model(self):
+        """Load the silero-VAD model."""
+        if self.vad_model is None:
+            self._update_progress("Loading Voice Activity Detection model...")
+            self.vad_model = load_silero_vad()
+    
+    def _load_whisper_model(self, model_name: str = None):
+        """
+        Load the Whisper model with CUDA optimization.
+        
+        Args:
+            model_name: Model name to load (defaults to Config.WHISPER_MODEL)
+        """
+        if model_name is None:
+            model_name = Config.WHISPER_MODEL
+        
+        # Only reload if we're changing models
+        if self.current_model_name == model_name and self.model is not None:
+            return
+        
+        try:
+            self._update_progress(f"Loading Whisper model ({model_name})...")
+            
+            # Clear GPU memory if switching models
+            if self.model is not None:
+                del self.model
+                torch.cuda.empty_cache()
+            
+            # Load model with FP16 for RTX 3060
+            self.model = whisper.load_model(
+                model_name,
+                device=self.device
+            )
+            
+            # if self.device == "cuda":
+            #     self.model = self.model.half()  # Use FP16 to save VRAM
+            
+            self.current_model_name = model_name
+            self._update_progress(f"✅ Loaded {model_name} on {self.device}")
+            
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                self._handle_oom_error(model_name)
+            else:
+                raise
+    
+    def _handle_oom_error(self, failed_model: str):
+        """
+        Handle CUDA Out of Memory error by falling back to smaller model.
+        
+        Args:
+            failed_model: Name of the model that failed to load
+        """
+        self._update_progress(f"⚠️ GPU memory insufficient for {failed_model}")
+        
+        # Clear GPU memory
+        torch.cuda.empty_cache()
+        
+        # Try fallback model
+        fallback = Config.WHISPER_FALLBACK_MODEL
+        if failed_model == fallback:
+            # If fallback also fails, try medium
+            fallback = "medium"
+        
+        self._update_progress(f"🔄 Retrying with {fallback}...")
+        
+        try:
+            self.model = whisper.load_model(fallback, device=self.device)
+            # if self.device == "cuda":
+            #     self.model = self.model.half()
+            self.current_model_name = fallback
+            self._update_progress(f"✅ Successfully loaded {fallback}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to load fallback model: {str(e)}")
+    
+    def _convert_to_wav(self, audio_path: Path) -> Path:
+        """
+        Convert audio file to WAV format if needed.
+        
+        Args:
+            audio_path: Path to the audio file
+            
+        Returns:
+            Path to WAV file
+        """
+        if audio_path.suffix.lower() == ".wav":
+            return audio_path
+        
+        self._update_progress(f"Converting {audio_path.suffix} to WAV...")
+        
+        # Convert using pydub
+        audio = AudioSegment.from_file(str(audio_path))
+        wav_path = audio_path.with_suffix(".wav")
+        audio.export(str(wav_path), format="wav")
+        
+        return wav_path
+    
+    def _apply_vad(self, audio_path: Path) -> list:
+        """
+        Apply Voice Activity Detection to find speech segments.
+        
+        Args:
+            audio_path: Path to WAV audio file
+            
+        Returns:
+            List of speech timestamp dictionaries
+        """
+        self._load_vad_model()
+        self._update_progress("Detecting speech segments with VAD...")
+        
+        # Load audio
+        wav, sample_rate = torchaudio.load(str(audio_path))
+        
+        # Ensure mono
+        if wav.shape[0] > 1:
+            wav = torch.mean(wav, dim=0, keepdim=True)
+        
+        # Resample to 16kHz if needed (silero-VAD requirement)
+        if sample_rate != 16000:
+            resampler = torchaudio.transforms.Resample(sample_rate, 16000)
+            wav = resampler(wav)
+            sample_rate = 16000
+        
+        # Get speech timestamps
+        speech_timestamps = get_speech_timestamps(
+            wav.squeeze(),
+            self.vad_model,
+            sampling_rate=sample_rate,
+            threshold=0.5,  # Speech probability threshold
+            min_speech_duration_ms=250,  # Minimum speech duration
+            min_silence_duration_ms=500,  # Minimum silence to split on
+        )
+        
+        total_speech_time = sum(
+            (ts['end'] - ts['start']) / sample_rate
+            for ts in speech_timestamps
+        )
+        
+        self._update_progress(
+            f"✅ Found {len(speech_timestamps)} speech segments "
+            f"({total_speech_time:.1f}s of speech)"
+        )
+        
+        return speech_timestamps
+    
+    def transcribe(self, audio_path: Path) -> dict:
+        """
+        Transcribe audio file with VAD-based preprocessing.
+        
+        Args:
+            audio_path: Path to the audio file
+            
+        Returns:
+            Dictionary with transcript and segments
+        """
+        try:
+            # Convert to WAV if needed
+            wav_path = self._convert_to_wav(audio_path)
+            
+            # Apply VAD to detect speech
+            speech_timestamps = self._apply_vad(wav_path)
+            
+            if not speech_timestamps:
+                return {
+                    "text": "",
+                    "segments": [],
+                    "warning": "No speech detected in audio file"
+                }
+            
+            # Load Whisper model
+            self._load_whisper_model()
+            
+            # Transcribe with Whisper
+            self._update_progress("Transcribing audio with Whisper...")
+            
+            try:
+                result = self.model.transcribe(
+                    str(wav_path),
+                    language="ko",  # Auto-detect, but prioritize Korean
+                    task="transcribe",
+                    fp16=False, # Fix: Force FP32 to avoid LayerNorm errors
+                    verbose=False,
+                )
+                
+                self._update_progress("✅ Transcription complete")
+                
+                # Format results
+                return {
+                    "text": result["text"].strip(),
+                    "segments": [
+                        {
+                            "start": seg["start"],
+                            "end": seg["end"],
+                            "text": seg["text"].strip(),
+                            "timestamp": f"[{format_timestamp(seg['start'])}]"
+                        }
+                        for seg in result["segments"]
+                    ],
+                    "language": result.get("language", "unknown"),
+                    "model_used": self.current_model_name
+                }
+                
+            except RuntimeError as e:
+                if "out of memory" in str(e).lower():
+                    # Clear memory and retry with fallback
+                    torch.cuda.empty_cache()
+                    self._handle_oom_error(self.current_model_name)
+                    # Retry transcription
+                    return self.transcribe(audio_path)
+                else:
+                    raise
+            
+        except Exception as e:
+            raise RuntimeError(f"Transcription failed: {str(e)}")
+    
+    def cleanup(self):
+        """Clean up resources and free GPU memory."""
+        if self.model is not None:
+            del self.model
+            self.model = None
+        
+        if self.vad_model is not None:
+            del self.vad_model
+            self.vad_model = None
+        
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        self._update_progress("Cleaned up audio processor resources")
