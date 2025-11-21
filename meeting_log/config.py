@@ -11,7 +11,7 @@ class Config:
     
     # API Keys
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-3-pro-preview")
+    GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-pro")
     NOTION_TOKEN = os.getenv("NOTION_TOKEN", "")
     NOTION_PAGE_ID = os.getenv("NOTION_PAGE_ID", "")
     
