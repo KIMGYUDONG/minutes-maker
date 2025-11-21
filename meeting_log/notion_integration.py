@@ -41,7 +41,9 @@ class NotionClient:
             URL of the created page
         """
         try:
-            title = datetime.now().strftime("📋 Meeting Minutes - %Y-%m-%d %H:%M")
+            # Windows strftime() can't handle emojis, so format separately
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+            title = f"📋 Meeting Minutes - {timestamp}"
 
             new_page = self.client.pages.create(
                 parent={"database_id": self.page_id},
