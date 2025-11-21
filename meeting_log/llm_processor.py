@@ -83,7 +83,7 @@ class LLMProcessor:
         Returns:
             Formatted prompt string
         """
-        prompt = """You are an expert meeting minutes assistant. Your task is to create comprehensive, well-structured meeting minutes.
+        prompt = """You are an expert meeting minutes assistant for a Korean team. Your task is to create comprehensive, well-structured meeting minutes in Korean.
 
 You will receive:
 1. **Audio Transcript**: Automatically transcribed speech from the meeting
@@ -94,31 +94,51 @@ You will receive:
 - Use the transcript to enrich details and provide context
 - If there's a conflict, prioritize the manual notes
 - Merge both sources intelligently to create comprehensive minutes
-- Use clear, professional language
+- Write in clear, professional Korean
 - Focus on actionable insights and decisions
+- Use the hierarchical numbering format: 1. → a. → •
 
 **OUTPUT FORMAT:**
-Structure your response EXACTLY as follows with clear section headers:
+Structure your response EXACTLY as follows with Korean section headers:
 
-## 📝 Summary
-[2-3 sentence high-level overview of the meeting]
+## 요약
+[2-3 문장으로 회의 전체 내용을 간단히 요약]
 
-## 🔑 Key Updates
-[Bullet points of important updates, decisions, or announcements]
-- Update 1
-- Update 2
-- Update 3
+## 업데이트
+[중요한 업데이트, 결정사항, 공지사항을 계층적으로 구조화]
+1. **주요 업데이트 제목**
+    a. 세부 사항 1
+        • 상세 내용 또는 설명
+        • 추가 정보
+    b. 세부 사항 2
+        • 상세 내용
+2. **두 번째 업데이트**
+    a. 세부 사항
+        • 내용
 
-## 💬 Discussion Log
-[Detailed discussion points with context. Include important quotes or arguments]
-- Topic 1: [description]
-- Topic 2: [description]
+## 논의사항
+[회의에서 논의된 주요 주제와 의견을 구조화]
+1. **논의 주제 1**
+    a. 참석자 의견 또는 관점
+        • 구체적인 논점
+        • 추가 논의 내용
+    b. 결론 또는 합의사항
+2. **논의 주제 2**
+    • 주요 논점
 
-## ✅ Action Items
-[Clear, actionable tasks with owners if mentioned]
-- [ ] Task 1
-- [ ] Task 2
-- [ ] Task 3
+## 할 일
+[담당자별 액션 아이템을 명확하게 기술]
+1. **담당자 이름:**
+    • 구체적인 할 일 1
+    • 구체적인 할 일 2
+2. **다른 담당자:**
+    • 할 일
+
+**STRUCTURE RULES:**
+- Use "1.", "2.", "3." for main points
+- Use "a.", "b.", "c." for sub-points (indented under numbers)
+- Use "•" for detailed items (indented under letters)
+- Keep formatting consistent throughout
 
 ---
 
@@ -164,27 +184,44 @@ Now generate the meeting minutes following the exact format above:"""
         for line in lines:
             line_lower = line.lower().strip()
 
-            if '📝 summary' in line_lower or '## summary' in line_lower:
-                if current_section and section_content:
-                    sections[current_section] = '\n'.join(section_content).strip()
-                current_section = "summary"
-                section_content = []
-            elif '🔑 key updates' in line_lower or '## key updates' in line_lower:
-                if current_section and section_content:
-                    sections[current_section] = '\n'.join(section_content).strip()
-                current_section = "key_updates"
-                section_content = []
-            elif '💬 discussion log' in line_lower or '## discussion' in line_lower:
-                if current_section and section_content:
-                    sections[current_section] = '\n'.join(section_content).strip()
-                current_section = "discussion_log"
-                section_content = []
-            elif '✅ action items' in line_lower or '## action' in line_lower:
-                if current_section and section_content:
-                    sections[current_section] = '\n'.join(section_content).strip()
-                current_section = "action_items"
-                section_content = []
-            elif current_section and line.strip() and not line.startswith('##'):
+            # 요약 섹션 감지
+            if '요약' in line or 'summary' in line_lower:
+                if line.startswith('#'):
+                    if current_section and section_content:
+                        sections[current_section] = '\n'.join(section_content).strip()
+                    current_section = "summary"
+                    section_content = []
+                    continue
+
+            # 업데이트 섹션 감지
+            if '업데이트' in line or 'updates' in line_lower or 'key updates' in line_lower:
+                if line.startswith('#'):
+                    if current_section and section_content:
+                        sections[current_section] = '\n'.join(section_content).strip()
+                    current_section = "key_updates"
+                    section_content = []
+                    continue
+
+            # 논의사항 섹션 감지
+            if '논의사항' in line or 'discussion' in line_lower:
+                if line.startswith('#'):
+                    if current_section and section_content:
+                        sections[current_section] = '\n'.join(section_content).strip()
+                    current_section = "discussion_log"
+                    section_content = []
+                    continue
+
+            # 할 일 섹션 감지
+            if '할 일' in line or '할일' in line or 'action' in line_lower:
+                if line.startswith('#'):
+                    if current_section and section_content:
+                        sections[current_section] = '\n'.join(section_content).strip()
+                    current_section = "action_items"
+                    section_content = []
+                    continue
+
+            # 섹션 헤더가 아니면 내용 추가
+            if current_section and line.strip() and not line.startswith('##'):
                 section_content.append(line)
 
         # Handle the final section after loop ends

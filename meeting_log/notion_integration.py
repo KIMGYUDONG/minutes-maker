@@ -42,8 +42,8 @@ class NotionClient:
         """
         try:
             # Windows strftime() can't handle emojis, so format separately
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-            title = f"📋 Meeting Minutes - {timestamp}"
+            timestamp = datetime.now().strftime("%Y-%m-%d")
+            title = f"📋 팀 주간 회의 {timestamp}"
 
             new_page = self.client.pages.create(
                 parent={"database_id": self.page_id},
@@ -87,33 +87,16 @@ class NotionClient:
         """
         blocks = []
 
-        blocks.append(self._heading_block("📝 Summary", level=2))
+        blocks.append(self._heading_block("요약", level=2))
         blocks.extend(self._text_to_blocks(summary))
 
-        blocks.append(self._heading_block("🔑 Key Updates", level=2))
+        blocks.append(self._heading_block("업데이트", level=2))
         blocks.extend(self._text_to_blocks(key_updates))
 
-        # Toggle block saves space for lengthy discussions
-        blocks.append({
-            "object": "block",
-            "type": "toggle",
-            "toggle": {
-                "rich_text": [
-                    {
-                        "type": "text",
-                        "text": {
-                            "content": "💬 Discussion Log"
-                        },
-                        "annotations": {
-                            "bold": True
-                        }
-                    }
-                ],
-                "children": self._text_to_blocks(discussion_log)
-            }
-        })
+        blocks.append(self._heading_block("논의사항", level=2))
+        blocks.extend(self._text_to_blocks(discussion_log))
 
-        blocks.append(self._heading_block("✅ Action Items", level=2))
+        blocks.append(self._heading_block("할 일", level=2))
         blocks.extend(self._action_items_to_blocks(action_items))
         
         return blocks
