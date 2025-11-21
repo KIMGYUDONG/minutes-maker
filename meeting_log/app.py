@@ -228,6 +228,9 @@ def process_meeting(uploaded_file, manual_notes: str):
 
         upload_path.unlink(missing_ok=True)
 
+        # Force page refresh to display results
+        st.rerun()
+
     except Exception as e:
         print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] ❌ 에러 발생!")
         print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 에러 타입: {type(e).__name__}")
