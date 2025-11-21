@@ -158,17 +158,11 @@ def main():
 def process_meeting(uploaded_file, manual_notes: str):
     """Process the meeting audio and generate minutes."""
     try:
-        print(f"\n[DEBUG {datetime.now().strftime('%H:%M:%S')}] ========== 회의록 생성 시작 ==========")
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 파일명: {uploaded_file.name}")
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 파일 크기: {len(uploaded_file.getvalue()) / (1024*1024):.2f} MB")
-
         upload_path = Config.UPLOAD_DIR / uploaded_file.name
         with open(upload_path, 'wb') as f:
             f.write(uploaded_file.getbuffer())
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 파일 저장 완료: {upload_path}")
 
         is_valid, error_msg = validate_audio_file(upload_path)
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 파일 검증 결과: {is_valid}")
         if not is_valid:
             st.error(f"❌ {error_msg}")
             return
@@ -181,50 +175,35 @@ def process_meeting(uploaded_file, manual_notes: str):
             progress_bar.progress(progress)
 
         # Step 1: Transcribe audio with Whisper + VAD
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] Step 1 시작: 오디오 전사")
         update_progress("Initializing audio processor...", 0.1)
         audio_processor = AudioProcessor(
             progress_callback=lambda msg: update_progress(msg, 0.2)
         )
 
         update_progress("Transcribing audio with Whisper + VAD...", 0.3)
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] Whisper 전사 시작...")
         transcript_result = audio_processor.transcribe(upload_path)
         st.session_state.transcript_result = transcript_result
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 전사 완료!")
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] Transcript 길이: {len(transcript_result.get('text', ''))} 글자")
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 사용 모델: {transcript_result.get('model_used', 'unknown')}")
 
         audio_processor.cleanup()
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] AudioProcessor 정리 완료")
         
         if not transcript_result.get('text'):
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 경고: 음성이 감지되지 않음")
             st.warning("⚠️ No speech detected in the audio file")
             return
 
         # Step 2: Generate structured minutes with Gemini Pro
-        print(f"\n[DEBUG {datetime.now().strftime('%H:%M:%S')}] Step 2 시작: LLM 회의록 생성")
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] Manual notes 포함 여부: {bool(manual_notes and manual_notes.strip())}")
         update_progress("Generating meeting minutes with Gemini Pro...", 0.6)
-
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] LLMProcessor 초기화 중...")
         llm_processor = LLMProcessor()
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] LLM API 호출 시작...")
 
         minutes = llm_processor.create_meeting_minutes(
             transcript=transcript_result['text'],
             manual_notes=manual_notes if manual_notes.strip() else None
         )
 
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] LLM 응답 수신 완료!")
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 생성된 섹션: {list(minutes.keys())}")
         st.session_state.meeting_minutes = minutes
         
         update_progress("Complete! 🎉", 1.0)
         status_text.success("✅ Meeting minutes generated successfully!")
         progress_bar.empty()
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] ========== 회의록 생성 완료 ==========\n")
 
         upload_path.unlink(missing_ok=True)
 
@@ -232,10 +211,6 @@ def process_meeting(uploaded_file, manual_notes: str):
         st.rerun()
 
     except Exception as e:
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] ❌ 에러 발생!")
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 에러 타입: {type(e).__name__}")
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 에러 메시지: {str(e)}")
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 스택 트레이스:\n{traceback.format_exc()}")
         st.error(format_error_message(e))
         st.error("**Details:**")
         st.code(traceback.format_exc())

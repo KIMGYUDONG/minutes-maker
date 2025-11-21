@@ -11,15 +11,11 @@ class LLMProcessor:
     
     def __init__(self):
         """Initialize the Gemini Pro client."""
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] LLMProcessor.__init__() 시작")
         if not Config.GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY is not configured")
 
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] Gemini API 설정 중...")
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 모델명: {Config.GEMINI_MODEL_NAME}")
         genai.configure(api_key=Config.GEMINI_API_KEY)
         self.model = genai.GenerativeModel(Config.GEMINI_MODEL_NAME)
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] Gemini 모델 초기화 완료")
     
     def create_meeting_minutes(
         self,
@@ -36,17 +32,9 @@ class LLMProcessor:
         Returns:
             Dictionary with summary, key_updates, discussion_log, and action_items
         """
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] create_meeting_minutes() 시작")
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] Transcript 길이: {len(transcript)} 글자")
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] Manual notes: {len(manual_notes) if manual_notes else 0} 글자")
-
         prompt = self._build_prompt(transcript, manual_notes)
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] Prompt 생성 완료: {len(prompt)} 글자")
 
         try:
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] ⏳ Gemini API 호출 중... (응답 대기)")
-            start_time = datetime.now()
-
             response = self.model.generate_content(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
@@ -57,19 +45,10 @@ class LLMProcessor:
                 )
             )
 
-            end_time = datetime.now()
-            elapsed = (end_time - start_time).total_seconds()
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] ✅ Gemini API 응답 수신 (소요시간: {elapsed:.2f}초)")
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 응답 텍스트 길이: {len(response.text)} 글자")
-
             result = self._parse_response(response.text)
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 응답 파싱 완료")
             return result
-            
+
         except Exception as e:
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] ❌ Gemini API 호출 실패!")
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 에러 타입: {type(e).__name__}")
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 에러 메시지: {str(e)}")
             raise RuntimeError(f"Failed to generate meeting minutes: {str(e)}")
     
     def _build_prompt(self, transcript: str, manual_notes: Optional[str]) -> str:

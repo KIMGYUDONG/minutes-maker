@@ -187,22 +187,10 @@ class AudioProcessor:
             Dictionary with transcript and segments
         """
         try:
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] AudioProcessor.transcribe() 시작")
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 오디오 파일: {audio_path}")
-
-            # Convert to WAV if needed
-            start_time = datetime.now()
             wav_path = self._convert_to_wav(audio_path)
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] WAV 변환 완료: {(datetime.now() - start_time).total_seconds():.2f}초")
-
-            # Apply VAD to detect speech
-            start_time = datetime.now()
             speech_timestamps = self._apply_vad(wav_path)
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] VAD 처리 완료: {(datetime.now() - start_time).total_seconds():.2f}초")
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 감지된 음성 세그먼트: {len(speech_timestamps)}개")
 
             if not speech_timestamps:
-                print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 경고: 음성 세그먼트가 감지되지 않음")
                 return {
                     "text": "",
                     "segments": [],
@@ -214,8 +202,6 @@ class AudioProcessor:
 
             # Transcribe with Whisper
             self._update_progress("Transcribing audio with Whisper...")
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] Whisper 전사 시작...")
-            start_time = datetime.now()
 
             try:
                 result = self.model.transcribe(
@@ -225,12 +211,6 @@ class AudioProcessor:
                     fp16=False, # Fix: Force FP32 to avoid LayerNorm errors
                     verbose=False,
                 )
-
-                elapsed = (datetime.now() - start_time).total_seconds()
-                print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] Whisper 전사 완료: {elapsed:.2f}초")
-                print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 전사된 텍스트 길이: {len(result['text'])} 글자")
-                print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 세그먼트 수: {len(result['segments'])}개")
-                print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 감지된 언어: {result.get('language', 'unknown')}")
 
                 self._update_progress("✅ Transcription complete")
 
@@ -252,18 +232,13 @@ class AudioProcessor:
                 
             except RuntimeError as e:
                 if "out of memory" in str(e).lower():
-                    print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] GPU OOM 발생, fallback 모델로 재시도")
-                    # Clear memory and retry with fallback
                     torch.cuda.empty_cache()
                     self._handle_oom_error(self.current_model_name)
-                    # Retry transcription
                     return self.transcribe(audio_path)
                 else:
                     raise
 
         except Exception as e:
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] ❌ Transcription 실패!")
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] 에러: {str(e)}")
             raise RuntimeError(f"Transcription failed: {str(e)}")
     
     def cleanup(self):

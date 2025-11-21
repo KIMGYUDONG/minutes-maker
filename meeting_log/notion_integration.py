@@ -43,10 +43,14 @@ class NotionClient:
         try:
             # Windows strftime() can't handle emojis, so format separately
             timestamp = datetime.now().strftime("%Y-%m-%d")
-            title = f"📋 팀 주간 회의 {timestamp}"
+            title = f"팀 주간 회의 {timestamp}"
 
             new_page = self.client.pages.create(
                 parent={"database_id": self.page_id},
+                icon={
+                    "type": "emoji",
+                    "emoji": "🧐"
+                },
                 properties={
                     "제목": {
                         "title": [
