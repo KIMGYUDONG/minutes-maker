@@ -4,6 +4,7 @@ from notion_client import Client
 from typing import List, Dict, Any
 from datetime import datetime
 from config import Config
+from utils import chunk_text
 
 
 class NotionClient:
@@ -40,14 +41,12 @@ class NotionClient:
             URL of the created page
         """
         try:
-            # Generate title with timestamp
             title = datetime.now().strftime("📋 Meeting Minutes - %Y-%m-%d %H:%M")
-            
-            # Create the page
+
             new_page = self.client.pages.create(
-                parent={"page_id": self.page_id},
+                parent={"database_id": self.page_id},
                 properties={
-                    "title": {
+                    "제목": {
                         "title": [
                             {
                                 "text": {
@@ -85,16 +84,14 @@ class NotionClient:
             List of Notion block objects
         """
         blocks = []
-        
-        # Summary section
+
         blocks.append(self._heading_block("📝 Summary", level=2))
         blocks.extend(self._text_to_blocks(summary))
-        
-        # Key Updates section
+
         blocks.append(self._heading_block("🔑 Key Updates", level=2))
         blocks.extend(self._text_to_blocks(key_updates))
-        
-        # Discussion Log section (as toggle to save space)
+
+        # Toggle block saves space for lengthy discussions
         blocks.append({
             "object": "block",
             "type": "toggle",
@@ -113,8 +110,7 @@ class NotionClient:
                 "children": self._text_to_blocks(discussion_log)
             }
         })
-        
-        # Action Items section
+
         blocks.append(self._heading_block("✅ Action Items", level=2))
         blocks.extend(self._action_items_to_blocks(action_items))
         
@@ -167,8 +163,7 @@ class NotionClient:
             line = line.strip()
             if not line:
                 continue
-            
-            # Check if it's a bullet point
+
             if line.startswith('-') or line.startswith('•'):
                 content = line[1:].strip()
                 blocks.extend(self._bulleted_list_block(content))
@@ -197,8 +192,7 @@ class NotionClient:
             line = line.strip()
             if not line:
                 continue
-            
-            # Remove bullet points, checkboxes, etc.
+
             content = line
             for prefix in ['-', '•', '[ ]', '[x]', '[]']:
                 if content.startswith(prefix):
@@ -207,40 +201,9 @@ class NotionClient:
             blocks.extend(self._todo_block(content))
         
         return blocks if blocks else self._paragraph_block("No action items")
-    
-    def _chunk_text(self, text: str, limit: int = 2000) -> List[str]:
-        """
-        Split text into chunks that fit within the limit.
-        
-        Args:
-            text: Text to split
-            limit: Character limit per chunk
-            
-        Returns:
-            List of text chunks
-        """
-        if len(text) <= limit:
-            return [text]
-            
-        chunks = []
-        while text:
-            if len(text) <= limit:
-                chunks.append(text)
-                break
-                
-            # Find a good split point
-            split_idx = text.rfind(' ', 0, limit)
-            if split_idx == -1:
-                split_idx = limit
-                
-            chunks.append(text[:split_idx])
-            text = text[split_idx:].lstrip()
-            
-        return chunks
-
     def _paragraph_block(self, text: str) -> List[Dict[str, Any]]:
         """Create paragraph block(s), chunking if necessary."""
-        chunks = self._chunk_text(text)
+        chunks = chunk_text(text)
         blocks = []
         
         for chunk in chunks:
@@ -262,7 +225,7 @@ class NotionClient:
     
     def _bulleted_list_block(self, text: str) -> List[Dict[str, Any]]:
         """Create bulleted list block(s), chunking if necessary."""
-        chunks = self._chunk_text(text)
+        chunks = chunk_text(text)
         blocks = []
         
         for chunk in chunks:
@@ -284,7 +247,7 @@ class NotionClient:
     
     def _todo_block(self, text: str) -> List[Dict[str, Any]]:
         """Create to-do block(s), chunking if necessary."""
-        chunks = self._chunk_text(text)
+        chunks = chunk_text(text)
         blocks = []
         
         for chunk in chunks:

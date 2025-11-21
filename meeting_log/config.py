@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
 class Config:
@@ -27,6 +26,12 @@ class Config:
     # Audio Configuration
     SUPPORTED_FORMATS = [".m4a", ".mp3", ".wav"]
     MAX_FILE_SIZE_MB = 500  # Maximum audio file size
+
+    # VAD (Voice Activity Detection) Configuration
+    VAD_SAMPLE_RATE = 16000  # Required sample rate for VAD
+    VAD_THRESHOLD = 0.5  # Speech probability threshold
+    VAD_MIN_SPEECH_MS = 250  # Minimum speech duration in milliseconds
+    VAD_MIN_SILENCE_MS = 500  # Minimum silence duration to split on
     
     # Paths
     BASE_DIR = Path(__file__).parent

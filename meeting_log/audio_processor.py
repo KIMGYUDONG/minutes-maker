@@ -8,11 +8,11 @@ import whisper
 from pathlib import Path
 from typing import Optional, Callable
 import torchaudio
-# Set backend to soundfile for Windows compatibility
+# soundfile backend ensures cross-platform compatibility (especially Windows)
 try:
     torchaudio.set_audio_backend("soundfile")
 except Exception:
-    pass # Fallback or already set
+    pass
 
 from pydub import AudioSegment
 from silero_vad import load_silero_vad, get_speech_timestamps
@@ -59,28 +59,22 @@ class AudioProcessor:
         """
         if model_name is None:
             model_name = Config.WHISPER_MODEL
-        
-        # Only reload if we're changing models
+
         if self.current_model_name == model_name and self.model is not None:
             return
-        
+
         try:
             self._update_progress(f"Loading Whisper model ({model_name})...")
-            
-            # Clear GPU memory if switching models
+
             if self.model is not None:
                 del self.model
                 torch.cuda.empty_cache()
-            
-            # Load model with FP16 for RTX 3060
+
             self.model = whisper.load_model(
                 model_name,
                 device=self.device
             )
-            
-            # if self.device == "cuda":
-            #     self.model = self.model.half()  # Use FP16 to save VRAM
-            
+
             self.current_model_name = model_name
             self._update_progress(f"✅ Loaded {model_name} on {self.device}")
             
@@ -98,11 +92,9 @@ class AudioProcessor:
             failed_model: Name of the model that failed to load
         """
         self._update_progress(f"⚠️ GPU memory insufficient for {failed_model}")
-        
-        # Clear GPU memory
+
         torch.cuda.empty_cache()
-        
-        # Try fallback model
+
         fallback = Config.WHISPER_FALLBACK_MODEL
         if failed_model == fallback:
             # If fallback also fails, try medium
@@ -112,8 +104,6 @@ class AudioProcessor:
         
         try:
             self.model = whisper.load_model(fallback, device=self.device)
-            # if self.device == "cuda":
-            #     self.model = self.model.half()
             self.current_model_name = fallback
             self._update_progress(f"✅ Successfully loaded {fallback}")
         except Exception as e:
@@ -131,10 +121,9 @@ class AudioProcessor:
         """
         if audio_path.suffix.lower() == ".wav":
             return audio_path
-        
+
         self._update_progress(f"Converting {audio_path.suffix} to WAV...")
-        
-        # Convert using pydub
+
         audio = AudioSegment.from_file(str(audio_path))
         wav_path = audio_path.with_suffix(".wav")
         audio.export(str(wav_path), format="wav")
@@ -153,28 +142,25 @@ class AudioProcessor:
         """
         self._load_vad_model()
         self._update_progress("Detecting speech segments with VAD...")
-        
-        # Load audio
+
         wav, sample_rate = torchaudio.load(str(audio_path))
-        
-        # Ensure mono
+
         if wav.shape[0] > 1:
             wav = torch.mean(wav, dim=0, keepdim=True)
-        
-        # Resample to 16kHz if needed (silero-VAD requirement)
-        if sample_rate != 16000:
-            resampler = torchaudio.transforms.Resample(sample_rate, 16000)
+
+        # silero-VAD requires 16kHz sample rate
+        if sample_rate != Config.VAD_SAMPLE_RATE:
+            resampler = torchaudio.transforms.Resample(sample_rate, Config.VAD_SAMPLE_RATE)
             wav = resampler(wav)
-            sample_rate = 16000
-        
-        # Get speech timestamps
+            sample_rate = Config.VAD_SAMPLE_RATE
+
         speech_timestamps = get_speech_timestamps(
             wav.squeeze(),
             self.vad_model,
             sampling_rate=sample_rate,
-            threshold=0.5,  # Speech probability threshold
-            min_speech_duration_ms=250,  # Minimum speech duration
-            min_silence_duration_ms=500,  # Minimum silence to split on
+            threshold=Config.VAD_THRESHOLD,
+            min_speech_duration_ms=Config.VAD_MIN_SPEECH_MS,
+            min_silence_duration_ms=Config.VAD_MIN_SILENCE_MS,
         )
         
         total_speech_time = sum(

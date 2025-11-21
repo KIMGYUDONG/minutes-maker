@@ -31,11 +31,9 @@ class LLMProcessor:
         Returns:
             Dictionary with summary, key_updates, discussion_log, and action_items
         """
-        # Build the prompt
         prompt = self._build_prompt(transcript, manual_notes)
-        
+
         try:
-            # Generate content with Gemini Pro
             response = self.model.generate_content(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
@@ -45,8 +43,7 @@ class LLMProcessor:
                     max_output_tokens=2048,
                 )
             )
-            
-            # Parse the response
+
             result = self._parse_response(response.text)
             return result
             
@@ -137,16 +134,14 @@ Now generate the meeting minutes following the exact format above:"""
             "action_items": "",
             "raw_output": response_text
         }
-        
-        # Split by section headers
+
         lines = response_text.split('\n')
         current_section = None
         section_content = []
-        
+
         for line in lines:
             line_lower = line.lower().strip()
-            
-            # Detect section headers
+
             if '📝 summary' in line_lower or '## summary' in line_lower:
                 if current_section and section_content:
                     sections[current_section] = '\n'.join(section_content).strip()
@@ -168,10 +163,9 @@ Now generate the meeting minutes following the exact format above:"""
                 current_section = "action_items"
                 section_content = []
             elif current_section and line.strip() and not line.startswith('##'):
-                # Add content to current section
                 section_content.append(line)
-        
-        # Don't forget the last section
+
+        # Handle the final section after loop ends
         if current_section and section_content:
             sections[current_section] = '\n'.join(section_content).strip()
         

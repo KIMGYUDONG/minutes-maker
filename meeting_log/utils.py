@@ -52,17 +52,6 @@ def format_timestamp(seconds: float) -> str:
         return f"{minutes:02d}:{secs:02d}"
 
 
-def get_meeting_title() -> str:
-    """
-    Generate a meeting title with current date and time.
-    
-    Returns:
-        Meeting title string
-    """
-    now = datetime.now()
-    return now.strftime("Meeting Minutes - %Y-%m-%d %H:%M")
-
-
 def format_error_message(error: Exception) -> str:
     """
     Format an error message for display.
@@ -75,22 +64,6 @@ def format_error_message(error: Exception) -> str:
     """
     error_type = type(error).__name__
     return f"❌ {error_type}: {str(error)}"
-
-
-def truncate_text(text: str, max_length: int = 100) -> str:
-    """
-    Truncate text to a maximum length.
-    
-    Args:
-        text: Text to truncate
-        max_length: Maximum length
-        
-    Returns:
-        Truncated text with ellipsis if needed
-    """
-    if len(text) <= max_length:
-        return text
-    return text[:max_length-3] + "..."
 
 
 def chunk_text(text: str, limit: int = 2000) -> list[str]:

@@ -6,7 +6,7 @@ import traceback
 from datetime import datetime
 
 from config import Config
-from utils import validate_audio_file, format_error_message, get_meeting_title
+from utils import validate_audio_file, format_error_message
 from audio_processor import AudioProcessor
 from llm_processor import LLMProcessor
 from notion_integration import NotionClient
@@ -116,20 +116,18 @@ def main():
     validate_configuration()
     Config.setup_directories()
     show_sidebar()
-    
-    # Main header
+
     st.markdown('<div class="main-header">📋 Automated Meeting Minutes</div>', unsafe_allow_html=True)
     st.markdown("Transform your meeting recordings into structured minutes with AI")
-    
-    # Create two columns for input
+
     col1, col2 = st.columns([1, 1])
     
     with col1:
         st.markdown('<div class="section-header">🎤 Audio Upload</div>', unsafe_allow_html=True)
         uploaded_file = st.file_uploader(
             "Upload your meeting recording",
-            type=['m4a', 'mp3', 'wav'],
-            help="Supported formats: m4a, mp3, wav (max 500MB)"
+            type=[fmt.lstrip('.') for fmt in Config.SUPPORTED_FORMATS],
+            help=f"Supported formats: {', '.join(fmt.lstrip('.') for fmt in Config.SUPPORTED_FORMATS)} (max {Config.MAX_FILE_SIZE_MB}MB)"
         )
         
         if uploaded_file:
@@ -144,17 +142,15 @@ def main():
             placeholder="Paste or type any manual notes you took during the meeting...",
             help="These notes will be merged with the audio transcript"
         )
-    
-    # Process button
+
     st.markdown("---")
-    
+
     if uploaded_file:
         if st.button("🚀 Generate Meeting Minutes", type="primary", use_container_width=True):
             process_meeting(uploaded_file, manual_notes)
     else:
         st.info("👆 Please upload an audio file to get started")
-    
-    # Display results
+
     if st.session_state.meeting_minutes:
         display_results()
 
@@ -162,26 +158,23 @@ def main():
 def process_meeting(uploaded_file, manual_notes: str):
     """Process the meeting audio and generate minutes."""
     try:
-        # Save uploaded file
         upload_path = Config.UPLOAD_DIR / uploaded_file.name
         with open(upload_path, 'wb') as f:
             f.write(uploaded_file.getbuffer())
-        
-        # Validate audio file
+
         is_valid, error_msg = validate_audio_file(upload_path)
         if not is_valid:
             st.error(f"❌ {error_msg}")
             return
-        
-        # Progress tracking
+
         progress_bar = st.progress(0)
         status_text = st.empty()
-        
+
         def update_progress(message: str, progress: float):
             status_text.info(f"⏳ {message}")
             progress_bar.progress(progress)
-        
-        # Step 1: Transcribe audio
+
+        # Step 1: Transcribe audio with Whisper + VAD
         update_progress("Initializing audio processor...", 0.1)
         audio_processor = AudioProcessor(
             progress_callback=lambda msg: update_progress(msg, 0.2)
@@ -196,8 +189,8 @@ def process_meeting(uploaded_file, manual_notes: str):
         if not transcript_result.get('text'):
             st.warning("⚠️ No speech detected in the audio file")
             return
-        
-        # Step 2: Generate meeting minutes with LLM
+
+        # Step 2: Generate structured minutes with Gemini Pro
         update_progress("Generating meeting minutes with Gemini Pro...", 0.6)
         llm_processor = LLMProcessor()
         minutes = llm_processor.create_meeting_minutes(
@@ -210,8 +203,7 @@ def process_meeting(uploaded_file, manual_notes: str):
         update_progress("Complete! 🎉", 1.0)
         status_text.success("✅ Meeting minutes generated successfully!")
         progress_bar.empty()
-        
-        # Clean up uploaded file
+
         upload_path.unlink(missing_ok=True)
         
     except Exception as e:
@@ -224,13 +216,11 @@ def display_results():
     """Display the generated meeting minutes with editing capability."""
     st.markdown("---")
     st.markdown('<div class="section-header">📄 Generated Meeting Minutes</div>', unsafe_allow_html=True)
-    
+
     minutes = st.session_state.meeting_minutes
-    
-    # Editable sections
+
     st.markdown("**Edit the sections below before sending to Notion:**")
-    
-    # Summary
+
     st.markdown("### 📝 Summary")
     edited_summary = st.text_area(
         "Summary",
@@ -239,8 +229,7 @@ def display_results():
         key='edit_summary',
         label_visibility='collapsed'
     )
-    
-    # Key Updates
+
     st.markdown("### 🔑 Key Updates")
     edited_key_updates = st.text_area(
         "Key Updates",
@@ -249,8 +238,7 @@ def display_results():
         key='edit_key_updates',
         label_visibility='collapsed'
     )
-    
-    # Discussion Log
+
     st.markdown("### 💬 Discussion Log")
     edited_discussion = st.text_area(
         "Discussion Log",
@@ -259,8 +247,7 @@ def display_results():
         key='edit_discussion',
         label_visibility='collapsed'
     )
-    
-    # Action Items
+
     st.markdown("### ✅ Action Items")
     edited_action_items = st.text_area(
         "Action Items",
@@ -269,10 +256,9 @@ def display_results():
         key='edit_action_items',
         label_visibility='collapsed'
     )
-    
-    # Send to Notion button
+
     st.markdown("---")
-    
+
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("📤 Send to Notion", type="primary", use_container_width=True):
@@ -282,8 +268,7 @@ def display_results():
                 edited_discussion,
                 edited_action_items
             )
-    
-    # Show Notion link if sent
+
     if st.session_state.notion_url:
         st.success(f"✅ Successfully sent to Notion!")
         st.markdown(f"[🔗 Open in Notion]({st.session_state.notion_url})")
