@@ -32,3 +32,15 @@ Thumbs.db
 
 # Streamlit
 .streamlit/
+
+# Spec Kit (Claude Code agent folder - may contain credentials)
+.claude/
+
+# Testing and Coverage
+.pytest_cache/
+.coverage
+coverage.xml
+coverage.json
+htmlcov/
+tests/pytest.log
+.tox/

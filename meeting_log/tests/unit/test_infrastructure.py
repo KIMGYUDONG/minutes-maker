@@ -1,3 +1,7 @@
+import pytest
+from tests.conftest import HAS_TORCH
+
+@pytest.mark.skipif(not HAS_TORCH, reason="whisper not available (Mac environment)")
 def test_whisper_mock(mock_whisper):
     """Verify Whisper mock returns 'Hello World'."""
     result = mock_whisper.transcribe("dummy_audio.wav")

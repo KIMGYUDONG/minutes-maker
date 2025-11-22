@@ -1,10 +1,21 @@
 import pytest
-import torch
-import torchaudio
 from pathlib import Path
-from audio_processor import AudioProcessor
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available, skipping GPU precision test")
+# Conditional imports for torch/torchaudio/audio_processor
+try:
+    import torch
+    import torchaudio
+    from audio_processor import AudioProcessor
+    HAS_TORCH = True
+    HAS_CUDA = torch.cuda.is_available()
+except ImportError:
+    HAS_TORCH = False
+    HAS_CUDA = False
+    AudioProcessor = None
+
+pytestmark = pytest.mark.skipif(not HAS_TORCH, reason="torch not available (Mac environment)")
+
+@pytest.mark.skipif(not HAS_CUDA, reason="CUDA not available, skipping GPU precision test")
 def test_transcription_precision_safety(tmp_path):
     """
     Test Case Name: test_transcription_precision_safety

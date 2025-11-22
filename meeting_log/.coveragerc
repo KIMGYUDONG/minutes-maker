@@ -1,0 +1,132 @@
+[run]
+# Coverage.py configuration for Meeting Minutes Generator
+
+# Source code to measure
+source = .
+
+# Omit files/directories from coverage
+omit =
+    # Virtual environments
+    venv/*
+    env/*
+    .venv/*
+    */venv/*
+    */env/*
+    */.venv/*
+
+    # Test files themselves
+    tests/*
+    test_*.py
+    *_test.py
+
+    # Configuration and utilities
+    config.py
+    setup.py
+
+    # Third-party libraries
+    */site-packages/*
+    */dist-packages/*
+
+    # IDE and build artifacts
+    __pycache__/*
+    */__pycache__/*
+    .pytest_cache/*
+    build/*
+    dist/*
+
+    # Spec Kit
+    .claude/*
+    specs/*
+
+    # Tools and scripts
+    tools/*
+    check_*.py
+
+    # Streamlit cache
+    .streamlit/*
+
+# Branch coverage (recommended for thorough testing)
+branch = True
+
+# Parallel mode (for multi-threaded tests)
+parallel = False
+
+# Data file location
+data_file = .coverage
+
+[report]
+# Reporting options
+
+# Precision for coverage percentage
+precision = 2
+
+# Show missing lines in report
+show_missing = True
+
+# Skip covered files in report
+skip_covered = False
+
+# Skip empty files
+skip_empty = True
+
+# Sort report by various metrics
+# Options: Name, Stmts, Miss, Branch, BrPart, Cover
+sort = Cover
+
+# Exclude lines from coverage
+exclude_lines =
+    # Standard pragma
+    pragma: no cover
+
+    # Defensive programming
+    def __repr__
+    def __str__
+
+    # Abstract methods
+    raise AssertionError
+    raise NotImplementedError
+
+    # Conditional imports
+    if TYPE_CHECKING:
+    if __name__ == .__main__.:
+
+    # Pass statements
+    pass
+
+    # Ellipsis
+    \.\.\.
+
+    # Debug/development code
+    if DEBUG:
+    if debug:
+
+    # Platform-specific code (optional)
+    if sys.platform
+    if platform.system
+
+# Ignore errors (useful for incomplete coverage runs)
+ignore_errors = False
+
+[html]
+# HTML report options
+
+# Output directory for HTML report
+directory = htmlcov
+
+# Title for HTML report
+title = Meeting Minutes Generator - Coverage Report
+
+[xml]
+# XML report options (for CI/CD integration)
+
+# Output file for XML report
+output = coverage.xml
+
+[json]
+# JSON report options
+
+# Output file for JSON report
+output = coverage.json
+
+# Pretty print JSON
+pretty_print = True

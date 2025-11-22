@@ -1,5 +1,23 @@
+import sys
+from pathlib import Path
 import pytest
 from unittest.mock import MagicMock
+
+# Add project root to Python path for imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+# Check if torch is available (for conditional test skipping)
+try:
+    import torch
+    HAS_TORCH = True
+except ImportError:
+    HAS_TORCH = False
+
+@pytest.fixture
+def has_torch():
+    """Fixture to check if torch is available."""
+    return HAS_TORCH
 
 @pytest.fixture
 def mock_whisper(mocker):

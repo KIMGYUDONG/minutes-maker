@@ -1,7 +1,16 @@
 import pytest
-import torch
 from unittest.mock import MagicMock, patch
-from audio_processor import AudioProcessor
+
+# Conditional imports for torch and audio_processor
+try:
+    import torch
+    from audio_processor import AudioProcessor
+    HAS_TORCH = True
+except ImportError:
+    HAS_TORCH = False
+    AudioProcessor = None
+
+pytestmark = pytest.mark.skipif(not HAS_TORCH, reason="torch not available (Mac environment)")
 
 def test_transcribe_mock(mock_whisper, tmp_path):
     """

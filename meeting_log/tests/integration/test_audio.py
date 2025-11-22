@@ -1,7 +1,15 @@
-import torch
-import torchaudio
 import os
 import pytest
+
+# Conditional imports for torch/torchaudio
+try:
+    import torch
+    import torchaudio
+    HAS_TORCH = True
+except ImportError:
+    HAS_TORCH = False
+
+pytestmark = pytest.mark.skipif(not HAS_TORCH, reason="torch not available (Mac environment)")
 
 def test_load_audio(tmp_path):
     """
