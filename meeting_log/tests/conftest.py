@@ -77,11 +77,68 @@ def mock_notion(mocker):
     Mocks the Notion Client to avoid API calls.
     """
     mock_client = MagicMock()
-    
+
     # Mock the pages.create method
     mock_client.pages.create.return_value = {"id": "mock_page_id"}
-    
+
     # Patch the Notion Client
     mocker.patch("notion_integration.Client", return_value=mock_client)
-    
+
     return mock_client
+
+
+# ============================================================================
+# BEHAVIOR TESTING FIXTURES (Real API, no mocks)
+# ============================================================================
+
+@pytest.fixture
+def real_notion_client():
+    """Real NotionClient for behavior testing.
+
+    Uses actual Notion API - no mocking.
+    Tests using this fixture will create real pages.
+    """
+    from notion_integration import NotionClient
+    return NotionClient()
+
+
+@pytest.fixture
+def real_llm_processor():
+    """Real LLMProcessor for behavior testing.
+
+    Uses actual Gemini API - no mocking.
+    Tests using this fixture will make real API calls.
+    """
+    from llm_processor import LLMProcessor
+    return LLMProcessor()
+
+
+@pytest.fixture
+def test_meeting_data():
+    """Sample meeting data for behavior tests."""
+    from tests.helpers.notion_helper import SAMPLE_MEETING_DATA
+    return SAMPLE_MEETING_DATA.copy()
+
+
+@pytest.fixture
+def test_transcript():
+    """Sample transcript for behavior tests."""
+    from tests.helpers.gemini_helper import SAMPLE_TEST_TRANSCRIPT
+    return SAMPLE_TEST_TRANSCRIPT
+
+
+@pytest.fixture
+def test_manual_notes():
+    """Sample manual notes for behavior tests."""
+    from tests.helpers.gemini_helper import SAMPLE_TEST_MANUAL_NOTES
+    return SAMPLE_TEST_MANUAL_NOTES
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_test_pages():
+    """Automatically clean up test Notion pages at end of session."""
+    yield  # Run tests
+
+    # Cleanup after all tests
+    from tests.helpers.notion_helper import cleanup_all_test_pages
+    cleanup_all_test_pages()
