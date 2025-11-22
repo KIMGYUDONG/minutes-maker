@@ -1,9 +1,9 @@
 # Meeting Minutes Maker
 
-**Methodology**: TDD + Spec Kit
+**Methodology**: TDD + Spec Kit (Kent Beck's Chicago School)
 **Platform**: Mac (development) + Windows (production with GPU)
-**Testing**: pytest, 75 tests (70 pass on Mac, 5 skip)
-**Coverage Goal**: 70%+
+**Testing**: pytest, 37 behavior tests (real APIs, no mocks)
+**Coverage Goal**: 70%+ (behavior coverage, not line coverage)
 
 ---
 
@@ -49,18 +49,26 @@
 ## Commands
 
 ```bash
-# Run all tests
-pytest tests/ -v
+# Run all behavior tests
+pytest tests/behavior/ -v
+
+# Run specific behavior test module
+pytest tests/behavior/test_notion_behavior.py -v
+pytest tests/behavior/test_llm_behavior.py -v
+pytest tests/behavior/test_full_workflow_behavior.py -v
+pytest tests/behavior/test_config_behavior.py -v
 
 # Run with coverage
-pytest --cov=. --cov-report=html --cov-report=term-missing
-
-# Run specific module
-pytest tests/unit/test_notion_integration.py -v
+pytest tests/behavior/ --cov=. --cov-report=html --cov-report=term-missing
 
 # Expected results
-# Mac: 70 passed, 5 skipped (audio tests)
-# Windows: 75 passed
+# Mac: 37 passed (all behavior tests use real APIs)
+# Windows: 37 passed + audio tests (if implemented)
+
+# Manual integration scripts (not pytest)
+python tests/integration/test_notion_only.py
+python tests/integration/test_llm_only.py
+python tests/integration/test_full_workflow.py
 ```
 
 ---
@@ -70,30 +78,62 @@ pytest tests/unit/test_notion_integration.py -v
 ```
 specs/              # Feature specifications (SPEC-001 ~ SPEC-004)
 tests/
-  ├── unit/         # Isolated tests with mocks (65 tests)
-  │   ├── test_config.py (29 tests)
-  │   ├── test_notion_integration.py (36 tests)
-  │   ├── test_llm_processor.py (2 tests)
-  │   └── test_utils.py (1 test)
-  └── integration/  # Real API tests (10 tests)
+  ├── behavior/     # Behavior-focused tests (37 tests, Kent Beck's Chicago School)
+  │   ├── test_notion_behavior.py (12 tests)
+  │   ├── test_llm_behavior.py (10 tests)
+  │   ├── test_full_workflow_behavior.py (7 tests)
+  │   ├── test_config_behavior.py (8 tests)
+  │   └── __init__.py (behavior testing documentation)
+  ├── unit/         # Remaining unit tests
+  │   ├── test_audio_processor.py
+  │   └── test_utils.py
+  ├── integration/  # Manual integration scripts (not pytest)
+  │   ├── test_notion_only.py
+  │   ├── test_llm_only.py
+  │   ├── test_full_workflow.py
+  │   └── test_gemini_connection.py
+  ├── helpers/      # Test helpers (fixtures, sample data)
+  │   ├── notion_helper.py
+  │   └── gemini_helper.py
+  └── conftest.py   # Pytest fixtures
 DEVELOPMENT.md      # Detailed TDD + Spec Kit guide (600+ lines)
 README.md           # Project documentation
 pytest.ini          # Test configuration
 .coveragerc         # Coverage settings
 ```
 
+### Test Philosophy (Kent Beck's Chicago School)
+
+**Behavior Tests** (tests/behavior/):
+- Test WHAT the code does, not HOW it works
+- Use real APIs (Notion, Gemini) - no mocks
+- Focus on observable outcomes only
+- Enable refactoring without breaking tests
+- 37 tests covering core functionality
+
+**Unit Tests** (tests/unit/):
+- Remaining utility and audio processing tests
+- Minimal mocking, focused on edge cases
+
+**Integration Scripts** (tests/integration/):
+- Manual test scripts for developers
+- Not automated with pytest
+- Useful for debugging and verification
+
 ---
 
 ## Platform-Specific Notes
 
 ### Mac (Current Environment)
+- All 37 behavior tests pass (use real APIs)
 - Audio/GPU tests automatically skip (no torch/CUDA)
-- Expected: `70 passed, 5 skipped`
+- Expected: `37 passed` (behavior tests)
 - Use `@pytest.mark.skipif(not HAS_TORCH)` for audio tests
-- All LLM and Notion tests MUST pass
+- All LLM and Notion behavior tests MUST pass
 
 ### Windows (Production)
-- All 75 tests should pass
+- All 37 behavior tests pass
+- Additional audio tests available with CUDA
 - Requires CUDA for Whisper large-v3
 - GPU: NVIDIA RTX 3060 (12GB VRAM)
 
