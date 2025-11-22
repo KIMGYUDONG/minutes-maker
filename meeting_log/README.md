@@ -193,9 +193,82 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 Maximum file size: 500MB
 
+## 🧪 Testing
+
+This project uses **Test-Driven Development (TDD)** with comprehensive test coverage.
+
+### Running Tests
+
+**Install development dependencies:**
+```bash
+pip install -r requirements-dev.txt
+```
+
+**Run all tests:**
+```bash
+pytest tests/ -v
+```
+
+**Run tests with coverage:**
+```bash
+pytest --cov=. --cov-report=html --cov-report=term-missing
+```
+
+**View coverage report:**
+```bash
+open htmlcov/index.html  # Mac
+start htmlcov\index.html  # Windows
+```
+
+### Test Organization
+
+```
+tests/
+├── unit/              # Unit tests (isolated, mocked)
+│   ├── test_config.py
+│   ├── test_llm_processor.py
+│   ├── test_notion_integration.py
+│   └── test_utils.py
+└── integration/       # Integration tests (real APIs)
+    ├── test_gemini_connection.py
+    └── test_full_workflow.py
+```
+
+### Platform-Specific Testing
+
+**Mac**: Audio tests are automatically skipped (torch not available)
+- ✅ 70 passed
+- ⏭️ 5 skipped (audio/GPU tests)
+
+**Windows**: All tests run including GPU/Audio tests
+- ✅ 75 passed
+
+### Coverage Report
+
+- `notion_integration.py`: **96.36%**
+- `llm_processor.py`: **88.17%**
+- `utils.py`: **50.94%**
+- **Overall** (excluding audio): **~70%**
+
+### Development Workflow
+
+For detailed development guidelines, see [DEVELOPMENT.md](DEVELOPMENT.md).
+
+**TDD + Spec Kit Workflow:**
+1. Write specification (`specs/SPEC-XXX.md`)
+2. Write tests first (Red)
+3. Implement feature (Green)
+4. Refactor and improve
+
 ## 🤝 Contributing
 
 This is a personal project. Feel free to fork and modify for your needs.
+
+**Development Guidelines:**
+- Follow TDD principles - tests first!
+- Maintain test coverage above 70%
+- Run tests before committing
+- See [DEVELOPMENT.md](DEVELOPMENT.md) for details
 
 ## 📄 License
 
