@@ -216,8 +216,12 @@ class AudioProcessor:
                     results.append(result)
 
                 # Merge transcripts
+                # DEBUG: 세그먼트 병합 시작
+                print(f"[DEBUG] 세그먼트 병합 시작 ({len(results)}개 결과)")
                 self._update_progress("세그먼트 병합 중... (95%)")
                 merged = self._merge_transcripts(results)
+                # DEBUG: 세그먼트 병합 완료
+                print(f"[DEBUG] ✓ 병합 완료 (최종: {len(merged.get('text', ''))} 문자)")
 
                 # Cleanup temporary files
                 self._cleanup_segments(segments)
@@ -388,6 +392,10 @@ class AudioProcessor:
             Transcription result dictionary
         """
         try:
+            # DEBUG: 세그먼트 처리 시작
+            print(f"[DEBUG] 세그먼트 {segment['index'] + 1}/{self.total_segments} 처리 시작")
+            print(f"[DEBUG] 파일: {segment['path']}, 길이: {segment.get('duration', 0):.1f}초")
+
             # Update progress
             percent = int((segment["index"] + 1) * 75 / self.total_segments + 20)
             self._update_progress(
@@ -403,9 +411,14 @@ class AudioProcessor:
                 verbose=False
             )
 
+            # DEBUG: Whisper 전사 완료
+            print(f"[DEBUG] ✓ 세그먼트 {segment['index'] + 1} 전사 완료 ({len(result['text'])} 문자)")
+
             # Clear GPU cache after each segment
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+                # DEBUG: GPU 메모리 정리 완료
+                print(f"[DEBUG] ✓ GPU 메모리 정리 완료")
 
             return {
                 "index": segment["index"],
@@ -433,6 +446,9 @@ class AudioProcessor:
         Returns:
             Merged transcript dictionary
         """
+        # DEBUG: 병합 메서드 시작
+        print(f"[DEBUG] _merge_transcripts 호출: {len(segment_results)}개 세그먼트")
+
         if not segment_results:
             return {"text": "", "segments": []}
 

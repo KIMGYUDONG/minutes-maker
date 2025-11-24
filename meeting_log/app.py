@@ -181,7 +181,14 @@ def process_meeting(uploaded_file, manual_notes: str):
         )
 
         update_progress("Transcribing audio with Whisper + VAD...", 0.3)
+        # DEBUG: 오디오 처리 시작
+        print(f"[DEBUG] === 오디오 처리 시작 ===")
+        print(f"[DEBUG] 파일 경로: {upload_path}")
         transcript_result = audio_processor.transcribe(upload_path)
+        # DEBUG: 오디오 처리 완료
+        print(f"[DEBUG] === 오디오 처리 완료 ===")
+        print(f"[DEBUG] 텍스트 길이: {len(transcript_result.get('text', ''))} 문자")
+        print(f"[DEBUG] 세그먼트 수: {len(transcript_result.get('segments', []))}개")
         st.session_state.transcript_result = transcript_result
 
         audio_processor.cleanup()
