@@ -49,7 +49,7 @@ class NotionClient:
                 parent={"database_id": self.page_id},
                 icon={
                     "type": "emoji",
-                    "emoji": "🧐"
+                    "emoji": "🤨"
                 },
                 properties={
                     "제목": {
@@ -60,6 +60,16 @@ class NotionClient:
                                 }
                             }
                         ]
+                    },
+                    "날짜": {
+                        "date": {
+                            "start": timestamp
+                        }
+                    },
+                    "유형": {
+                        "select": {
+                            "name": "팀 주간 회의"
+                        }
                     }
                 },
                 children=self._build_blocks(summary, key_updates, discussion_log, action_items)
@@ -155,8 +165,10 @@ class NotionClient:
 
             if line.startswith('-') or line.startswith('•'):
                 content = line[1:].strip()
+                content = self._strip_markdown_bold(content)
                 blocks.extend(self._bulleted_list_block(content))
             else:
+                line = self._strip_markdown_bold(line)
                 blocks.extend(self._paragraph_block(line))
         
         return blocks if blocks else self._paragraph_block("(No content)")
@@ -190,6 +202,21 @@ class NotionClient:
             blocks.extend(self._todo_block(content))
         
         return blocks if blocks else self._paragraph_block("No action items")
+
+    def _strip_markdown_bold(self, text: str) -> str:
+        """
+        Remove **bold** markdown from text.
+
+        Args:
+            text: Text potentially containing **bold** markdown
+
+        Returns:
+            Text with bold markdown removed
+        """
+        import re
+        # Remove **text** pattern
+        return re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+
     def _paragraph_block(self, text: str) -> List[Dict[str, Any]]:
         """Create paragraph block(s), chunking if necessary."""
         chunks = chunk_text(text)
