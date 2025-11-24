@@ -45,7 +45,16 @@ class LLMProcessor:
                 )
             )
 
-            result = self._parse_response(response.text)
+            # Handle both simple and multi-part responses
+            # Simple response: response.text works
+            # Multi-part response: need to concatenate response.parts
+            try:
+                response_text = response.text
+            except ValueError:
+                # Multi-part response (long content)
+                response_text = "".join(part.text for part in response.parts)
+
+            result = self._parse_response(response_text)
             return result
 
         except Exception as e:
