@@ -49,7 +49,7 @@ class NotionClient:
                 parent={"database_id": self.page_id},
                 icon={
                     "type": "emoji",
-                    "emoji": "🤨"
+                    "emoji": "🧐"
                 },
                 properties={
                     "제목": {
@@ -142,37 +142,162 @@ class NotionClient:
             }
         }
     
+    def _parse_hierarchical_text(self, text: str) -> List[Dict[str, Any]]:
+        """
+        Parse hierarchical text into a tree structure.
+
+        Args:
+            text: Text with indentation representing hierarchy
+
+        Returns:
+            List of dictionaries with content, level, and children
+        """
+        if not text or not text.strip():
+            return []
+
+        lines = text.split('\n')
+        items = []
+
+        for line in lines:
+            if not line.strip():
+                continue
+
+            # Count leading spaces to determine indent level
+            stripped = line.lstrip()
+            indent_count = len(line) - len(stripped)
+
+            # Determine indent level (0, 1, 2+)
+            # Typically: 0 spaces = level 0, 4 spaces = level 1, 8+ spaces = level 2
+            if indent_count == 0:
+                level = 0
+            elif indent_count <= 4:
+                level = 1
+            else:
+                level = 2
+
+            # Detect item type and extract content
+            content = stripped
+            item_type = "paragraph"
+
+            # Remove list markers
+            if content.startswith('•') or content.startswith('-'):
+                content = content[1:].strip()
+                item_type = "bulleted_list_item"
+            elif content and content[0].isdigit() and '.' in content[:4]:
+                # Numbered list: "1. ", "2. ", etc.
+                idx = content.index('.')
+                content = content[idx+1:].strip()
+                item_type = "numbered_list_item"
+            elif len(content) >= 2 and content[0].isalpha() and content[1] == '.':
+                # Lettered list: "a. ", "b. ", etc.
+                content = content[2:].strip()
+                item_type = "bulleted_list_item"
+
+            # Strip markdown bold
+            content = self._strip_markdown_bold(content)
+
+            items.append({
+                "content": content,
+                "level": level,
+                "type": item_type,
+                "children": []
+            })
+
+        return items
+
+    def _build_hierarchy(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Build parent-child hierarchy from flat list with levels.
+
+        Args:
+            items: Flat list of items with level information
+
+        Returns:
+            Hierarchical list with children nested
+        """
+        if not items:
+            return []
+
+        root = []
+        stack = []  # Stack of (item, level) tuples
+
+        for item in items:
+            current_level = item["level"]
+
+            # Pop items from stack that are not ancestors
+            while stack and stack[-1]["level"] >= current_level:
+                stack.pop()
+
+            # If stack is empty, this is a root item
+            if not stack:
+                root.append(item)
+                stack.append(item)
+            else:
+                # Add as child of the last item in stack
+                parent = stack[-1]
+                parent["children"].append(item)
+                stack.append(item)
+
+        return root
+
     def _text_to_blocks(self, text: str) -> List[Dict[str, Any]]:
         """
-        Convert text to Notion paragraph/bulleted list blocks.
-        
+        Convert text to Notion paragraph/bulleted list blocks with hierarchy.
+
         Args:
             text: Text to convert
-            
+
         Returns:
             List of Notion blocks
         """
         if not text or not text.strip():
             return self._paragraph_block("(No content)")
-        
-        blocks = []
-        lines = text.strip().split('\n')
-        
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
 
-            if line.startswith('-') or line.startswith('•'):
-                content = line[1:].strip()
-                content = self._strip_markdown_bold(content)
-                blocks.extend(self._bulleted_list_block(content))
-            else:
-                line = self._strip_markdown_bold(line)
-                blocks.extend(self._paragraph_block(line))
-        
+        # Parse hierarchical structure
+        items = self._parse_hierarchical_text(text)
+        if not items:
+            return self._paragraph_block("(No content)")
+
+        # Build hierarchy
+        hierarchy = self._build_hierarchy(items)
+
+        # Convert to Notion blocks
+        blocks = self._build_nested_blocks(hierarchy)
+
         return blocks if blocks else self._paragraph_block("(No content)")
-    
+
+    def _build_nested_blocks(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Recursively build Notion blocks with nested children.
+
+        Args:
+            items: Hierarchical items with children
+
+        Returns:
+            List of Notion block objects with children
+        """
+        blocks = []
+
+        for item in items:
+            content = item["content"]
+            item_type = item["type"]
+            children = item.get("children", [])
+
+            # Build children blocks recursively
+            children_blocks = []
+            if children:
+                children_blocks = self._build_nested_blocks(children)
+
+            # Create the appropriate block type
+            if item_type == "bulleted_list_item":
+                blocks.extend(self._bulleted_list_block(content, children_blocks))
+            elif item_type == "numbered_list_item":
+                blocks.extend(self._numbered_list_block(content, children_blocks))
+            else:
+                blocks.extend(self._paragraph_block(content, children_blocks))
+
+        return blocks
+
     def _action_items_to_blocks(self, text: str) -> List[Dict[str, Any]]:
         """
         Convert action items to Notion to-do blocks.
@@ -217,13 +342,13 @@ class NotionClient:
         # Remove **text** pattern
         return re.sub(r'\*\*(.+?)\*\*', r'\1', text)
 
-    def _paragraph_block(self, text: str) -> List[Dict[str, Any]]:
+    def _paragraph_block(self, text: str, children: List[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Create paragraph block(s), chunking if necessary."""
         chunks = chunk_text(text)
         blocks = []
-        
-        for chunk in chunks:
-            blocks.append({
+
+        for i, chunk in enumerate(chunks):
+            block = {
                 "object": "block",
                 "type": "paragraph",
                 "paragraph": {
@@ -236,16 +361,20 @@ class NotionClient:
                         }
                     ]
                 }
-            })
+            }
+            # Only add children to the first chunk
+            if i == 0 and children:
+                block["paragraph"]["children"] = children
+            blocks.append(block)
         return blocks
     
-    def _bulleted_list_block(self, text: str) -> List[Dict[str, Any]]:
+    def _bulleted_list_block(self, text: str, children: List[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Create bulleted list block(s), chunking if necessary."""
         chunks = chunk_text(text)
         blocks = []
-        
-        for chunk in chunks:
-            blocks.append({
+
+        for i, chunk in enumerate(chunks):
+            block = {
                 "object": "block",
                 "type": "bulleted_list_item",
                 "bulleted_list_item": {
@@ -258,7 +387,37 @@ class NotionClient:
                         }
                     ]
                 }
-            })
+            }
+            # Only add children to the first chunk
+            if i == 0 and children:
+                block["bulleted_list_item"]["children"] = children
+            blocks.append(block)
+        return blocks
+
+    def _numbered_list_block(self, text: str, children: List[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Create numbered list block(s), chunking if necessary."""
+        chunks = chunk_text(text)
+        blocks = []
+
+        for i, chunk in enumerate(chunks):
+            block = {
+                "object": "block",
+                "type": "numbered_list_item",
+                "numbered_list_item": {
+                    "rich_text": [
+                        {
+                            "type": "text",
+                            "text": {
+                                "content": chunk
+                            }
+                        }
+                    ]
+                }
+            }
+            # Only add children to the first chunk
+            if i == 0 and children:
+                block["numbered_list_item"]["children"] = children
+            blocks.append(block)
         return blocks
     
     def _todo_block(self, text: str) -> List[Dict[str, Any]]:
