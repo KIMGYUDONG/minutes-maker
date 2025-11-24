@@ -363,6 +363,60 @@ except Exception as e:
 | `429 Too Many Requests` | Rate limit exceeded | Retry after delay |
 | `500 Internal Server Error` | Gemini service issue | Retry or wait |
 
+### 6. Multi-Part Response Handling
+
+**Issue**: Gemini API Response Structure Varies by Content Length
+
+**Problem**:
+- **Simple Response** (short content): `response.text` works directly
+- **Multi-Part Response** (long content): `response.text` raises `ValueError`
+- Long transcripts (10,000+ chars) trigger multi-part responses
+- Current code (line 48) only handles simple responses
+
+**Root Cause**:
+```python
+# Current implementation (llm_processor.py:48)
+result = self._parse_response(response.text)  # ❌ Fails for multi-part
+```
+
+**When Multi-Part Occurs**:
+- Input transcript > 10,000 characters
+- Output expected to be very long
+- Complex structured responses
+- Example: 80-minute audio → 20,000+ char transcript → Multi-Part Response
+
+**Error Message**:
+```
+ValueError: The `response.text` quick accessor only works for simple (single-`Part`)
+text responses. This response is not simple text. Use the `result.parts` accessor or
+the full `result.candidates[index].content.parts` lookup instead.
+```
+
+**Solution**:
+```python
+# Updated implementation (handles both types)
+try:
+    response_text = response.text  # Try simple accessor first
+except ValueError:
+    # Multi-part response: concatenate all parts
+    response_text = "".join(part.text for part in response.parts)
+
+result = self._parse_response(response_text)
+```
+
+**Test Cases**:
+1. **Short transcript** (< 1,000 chars) → Simple Response → ✅ Works
+2. **Medium transcript** (3,000 chars) → Simple Response → ✅ Works
+3. **Long transcript** (10,000 chars) → May trigger Multi-Part → ✅ Must work
+4. **Very long transcript** (20,000+ chars) → Multi-Part Response → ✅ Must work
+
+**Acceptance Criteria**:
+- [ ] Handles simple responses (existing behavior)
+- [ ] Handles multi-part responses (new behavior)
+- [ ] All 37 existing behavior tests pass
+- [ ] New test: `test_handles_very_long_transcript()` passes
+- [ ] No regression in performance or output quality
+
 ## Dependencies
 
 ### Python Packages
