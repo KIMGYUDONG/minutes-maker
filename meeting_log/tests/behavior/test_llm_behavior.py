@@ -19,6 +19,7 @@ from tests.helpers.gemini_helper import (
     verify_korean_response,
     extract_action_items_from_response,
     contains_original_content,
+    generate_long_transcript,
 )
 
 
@@ -312,3 +313,61 @@ class TestOutputStructure:
 
         # At least 3 of 4 headers should be present
         assert headers_found >= 3, f"Expected Korean headers, found {headers_found}/4"
+
+
+class TestMultiPartResponse:
+    """Behavior: Handles Gemini multi-part responses for long content.
+
+    Context:
+    - Gemini API returns Simple Response for short content (< 5K chars)
+    - Gemini API returns Multi-Part Response for long content (> 10K chars)
+    - Multi-Part requires response.parts instead of response.text
+
+    This test ensures the LLM processor handles both response types.
+    """
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_handles_very_long_transcript(self, real_llm_processor):
+        """Test that LLM handles very long transcripts (multi-part responses).
+
+        Behavior tested:
+        - Processes 20,000+ character transcript
+        - Handles Gemini multi-part response structure
+        - Returns valid structured output
+        - No ValueError raised
+
+        Background:
+        - Long transcripts trigger multi-part responses
+        - Previous bug: response.text raises ValueError for multi-part
+        - Fix: Use response.parts for multi-part responses
+        """
+        # Given: Very long transcript that triggers multi-part response
+        long_transcript = generate_long_transcript(20000)  # ~20K chars
+
+        # Verify transcript is actually long enough
+        assert len(long_transcript) >= 18000, f"Expected 18K+ chars, got {len(long_transcript)}"
+
+        # When: Generate meeting minutes from very long transcript
+        result = real_llm_processor.create_meeting_minutes(
+            transcript=long_transcript,
+            manual_notes=None
+        )
+
+        # Then: Should succeed without ValueError
+        assert result is not None, "Result should not be None"
+        assert isinstance(result, dict), "Result should be a dictionary"
+
+        # Should have all required keys
+        required_keys = ["summary", "key_updates", "discussion_log", "action_items"]
+        for key in required_keys:
+            assert key in result, f"Missing required key: {key}"
+            assert isinstance(result[key], str), f"Key {key} should be string"
+
+        # Summary should not be empty
+        assert len(result["summary"]) > 0, "Summary should not be empty"
+
+        # Verify output structure is correct
+        raw_output = result.get("raw_output", "")
+        assert verify_gemini_meeting_minutes_structure(raw_output), \
+            "Output should have valid meeting minutes structure"

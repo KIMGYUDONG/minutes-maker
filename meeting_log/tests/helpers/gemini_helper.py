@@ -197,3 +197,64 @@ SAMPLE_TEST_MANUAL_NOTES = """
 - 개발팀 3명 투입
 - 킥오프 미팅 예정
 """
+
+
+def generate_long_transcript(target_chars: int) -> str:
+    """Generate realistic long Korean transcript for testing.
+
+    Args:
+        target_chars: Target character count (approximate)
+
+    Returns:
+        str: Generated Korean meeting transcript
+
+    Example:
+        >>> transcript = generate_long_transcript(20000)
+        >>> len(transcript) >= 18000  # Within 10% of target
+        True
+    """
+    # Base realistic meeting segments
+    segments = [
+        "안녕하세요. 오늘 주간 회의를 시작하겠습니다.",
+        "먼저 지난주 진행사항부터 공유해 주시겠습니까?",
+        "네, 신규 기능 개발이 예정대로 진행되고 있습니다.",
+        "현재 프론트엔드 작업이 80% 완료되었고, 백엔드는 95% 진행 중입니다.",
+        "테스트 케이스 작성은 어떻게 되고 있나요?",
+        "단위 테스트는 모두 완료되었고, 통합 테스트를 진행 중입니다.",
+        "좋습니다. 다음 주 배포 일정은 유지할 수 있을까요?",
+        "네, 현재 진행 속도라면 문제없을 것 같습니다.",
+        "그럼 액션 아이템을 정리하겠습니다.",
+        "김과장님은 프론트엔드 마무리를 담당해 주시고,",
+        "이대리님은 백엔드 최종 리뷰를 부탁드립니다.",
+        "박팀장님은 배포 계획서를 작성해 주시기 바랍니다.",
+        "다음으로 예산 관련 안건을 논의하겠습니다.",
+        "이번 분기 예산 사용 현황을 보고 드리겠습니다.",
+        "개발 비용이 예상보다 10% 절감되었습니다.",
+        "클라우드 인프라 비용도 최적화를 통해 감소했습니다.",
+        "절감된 예산으로 추가 교육 프로그램을 진행하면 어떨까요?",
+        "좋은 제안입니다. 팀원들의 역량 강화가 필요한 시점입니다.",
+        "그럼 다음 달부터 월 1회 외부 강사 초청 세미나를 진행하도록 하겠습니다.",
+        "마지막으로 인력 충원 계획에 대해 말씀드리겠습니다.",
+    ]
+
+    result = []
+    current_length = 0
+    segment_index = 0
+
+    while current_length < target_chars:
+        # Add segment
+        segment = segments[segment_index % len(segments)]
+        result.append(segment)
+        current_length += len(segment)
+        segment_index += 1
+
+        # Add realistic variations every few segments
+        if segment_index % 5 == 0:
+            result.append(f"그리고 추가로 말씀드리면, 현재 {segment_index // 5}차 검토가 진행 중입니다.")
+            current_length += len(result[-1])
+
+        # Add spacing
+        result.append("")
+        current_length += 1
+
+    return "\n".join(result)
