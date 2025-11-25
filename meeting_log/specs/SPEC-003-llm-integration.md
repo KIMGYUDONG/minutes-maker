@@ -417,6 +417,62 @@ result = self._parse_response(response_text)
 - [ ] New test: `test_handles_very_long_transcript()` passes
 - [ ] No regression in performance or output quality
 
+### 7. Output Token Limit Handling
+
+**Issue**: Response Truncated for Long Meetings
+
+**Problem**:
+- **Current Setting**: `max_output_tokens=2048`
+- **Effect**: For 60+ minute meetings, response is cut mid-generation
+- **Symptom**: "업데이트" section ends with incomplete text like "3. **"
+- **Result**: "논의사항" and "할 일" sections are empty
+
+**Evidence** (80-minute meeting):
+```
+## 요약
+[완료]
+
+## 업데이트
+1. 로고 및 앱 아이콘 디자인 최종 확정
+2. 오프라인 모임 피드백 공유
+3. **           ← 여기서 잘림!
+
+## 논의사항
+(No content)    ← 생성되지 않음
+
+## 할 일
+No action items ← 생성되지 않음
+```
+
+**Root Cause**:
+- 2048 tokens ≈ ~1,500-2,000 Korean characters
+- 80-minute meeting requires 4,000+ characters output
+- Gemini stops generating when limit reached
+
+**Solution**:
+```python
+# config.py
+GEMINI_MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "8192"))
+
+# llm_processor.py
+from config import GEMINI_MAX_OUTPUT_TOKENS
+
+max_output_tokens=GEMINI_MAX_OUTPUT_TOKENS,  # 환경변수 사용
+```
+
+**Token Limit Guidelines**:
+| 회의 길이 | 권장 토큰 | 환경변수 값 |
+|----------|----------|------------|
+| < 30분 | 2048 | 2048 |
+| 30-60분 | 4096 | 4096 |
+| 60분+ | 8192 | 8192 (기본값) |
+
+**Acceptance Criteria**:
+- [ ] 환경변수 `GEMINI_MAX_OUTPUT_TOKENS` 지원
+- [ ] 기본값 8192 (60분+ 회의 지원)
+- [ ] 80분 회의에서 4개 섹션 모두 생성
+- [ ] 테스트: `test_handles_long_meeting_output()` 통과
+
 ## Dependencies
 
 ### Python Packages
