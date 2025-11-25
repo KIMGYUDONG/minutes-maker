@@ -371,3 +371,64 @@ class TestMultiPartResponse:
         raw_output = result.get("raw_output", "")
         assert verify_gemini_meeting_minutes_structure(raw_output), \
             "Output should have valid meeting minutes structure"
+
+
+class TestLongMeetingOutput:
+    """Behavior: Generates complete output for long meetings (60+ minutes).
+
+    Context:
+    - Long meetings (60+ minutes) require more output tokens
+    - Previous bug: max_output_tokens=2048 caused truncation
+    - Symptom: "업데이트" section cut off, "논의사항" and "할 일" empty
+    - Fix: Increase max_output_tokens to 8192
+
+    This test ensures all 4 sections are generated for long meetings.
+    """
+
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_handles_long_meeting_output(self, real_llm_processor):
+        """Test that LLM generates complete output for long meetings.
+
+        Behavior tested:
+        - Processes transcript requiring long output
+        - All 4 sections (요약, 업데이트, 논의사항, 할 일) are generated
+        - No truncation mid-section
+        - Each section has meaningful content
+        """
+        # Given: Long, detailed transcript requiring comprehensive output
+        long_transcript = generate_long_transcript(15000)  # 15K chars
+
+        # When: Generate meeting minutes
+        result = real_llm_processor.create_meeting_minutes(
+            transcript=long_transcript,
+            manual_notes=None
+        )
+
+        # Then: All 4 sections should exist and have content
+        assert result is not None, "Result should not be None"
+
+        required_sections = ["summary", "key_updates", "discussion_log", "action_items"]
+        for section in required_sections:
+            assert section in result, f"Missing section: {section}"
+            # Each section should have non-trivial content (not just placeholder)
+            content = result[section]
+            assert len(content) > 10, f"Section {section} appears empty or too short: '{content[:50]}...'"
+
+        # Verify raw_output contains all Korean section headers
+        raw_output = result.get("raw_output", "")
+        korean_headers = ["## 요약", "## 업데이트", "## 논의사항", "## 할 일"]
+        for header in korean_headers:
+            assert header in raw_output, f"Missing header in output: {header}"
+
+        # Verify no truncation indicators
+        truncation_indicators = ["**\n##", ":\n##", "...\n##"]
+        for indicator in truncation_indicators:
+            # These patterns suggest abrupt truncation before next section
+            if indicator in raw_output:
+                # Check if it's actually truncation vs legitimate content
+                idx = raw_output.find(indicator)
+                context = raw_output[max(0, idx-50):idx+len(indicator)+10]
+                # Allow if it looks like legitimate formatting
+                if "3. **" in context or "4. **" in context:
+                    pytest.fail(f"Possible truncation detected: ...{context}...")
