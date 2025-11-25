@@ -400,6 +400,19 @@ These require WebSearch before answering:
 - **2nd violation**: List ALL previous claims, verify each with sources
 - **3rd violation**: Recommend starting new session
 
+### Rule 6: CROSS-CHECK FACTS WITH MULTIPLE SEARCHES
+When searching for factual information (pricing, limits, official specs):
+- **Minimum 2 parallel searches** with different query angles
+- **Cross-check** results before answering
+- **Cite multiple sources** to verify accuracy
+- **If sources conflict**: Report the discrepancy to user
+
+**Why**: Single search can return biased/outdated info. Cross-checking prevents confident misinformation.
+
+**Example (실패 사례)**:
+- ❌ "Premium 사용자용" - 검색 없이 추측
+- ✅ 검색 후 확인: "구독과 API는 별개 과금"
+
 ---
 
 ## Contact & Resources
