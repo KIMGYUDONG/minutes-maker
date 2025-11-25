@@ -41,7 +41,7 @@ class LLMProcessor:
                     temperature=0.3,  # Lower temperature for more focused output
                     top_p=0.8,
                     top_k=40,
-                    max_output_tokens=2048,
+                    max_output_tokens=Config.GEMINI_MAX_OUTPUT_TOKENS,
                 )
             )
 
