@@ -117,6 +117,59 @@ def save_transcript_on_error(transcript_text: str, original_filename: str) -> st
     return str(output_path)
 
 
+def process_transcript_file(uploaded_file, manual_notes: str):
+    """Process uploaded transcript txt file directly (skip Whisper)."""
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    status_text.info("⏳ Transcript 파일 로드 중...")
+    progress_bar.progress(0.3)
+
+    # Read txt file directly
+    transcript_text = uploaded_file.read().decode('utf-8')
+
+    if not transcript_text.strip():
+        progress_bar.empty()
+        st.warning("⚠️ 빈 파일입니다")
+        return
+
+    print(f"[DEBUG] === Transcript 파일 로드 완료 ===")
+    print(f"[DEBUG] 텍스트 길이: {len(transcript_text)} 문자")
+
+    st.session_state.transcript_result = {
+        'text': transcript_text,
+        'segments': [],
+        'source': 'txt_upload'
+    }
+
+    # LLM processing
+    status_text.info("⏳ Generating meeting minutes with Gemini...")
+    progress_bar.progress(0.6)
+
+    llm_processor = LLMProcessor()
+
+    try:
+        minutes = llm_processor.create_meeting_minutes(
+            transcript=transcript_text,
+            manual_notes=manual_notes if manual_notes.strip() else None
+        )
+
+        st.session_state.meeting_minutes = minutes
+
+        progress_bar.progress(1.0)
+        status_text.success("✅ Meeting minutes generated successfully!")
+        progress_bar.empty()
+
+        st.rerun()
+
+    except Exception as llm_error:
+        progress_bar.empty()
+        st.warning("⚠️ LLM 처리 실패")
+        st.error(format_error_message(llm_error))
+        st.error("**Details:**")
+        st.code(traceback.format_exc())
+
+
 def validate_configuration():
     """Validate configuration and show errors if any."""
     errors = Config.validate()
@@ -170,11 +223,11 @@ def main():
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        st.markdown('<div class="section-header">🎤 Audio Upload</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">📁 File Upload</div>', unsafe_allow_html=True)
         uploaded_file = st.file_uploader(
-            "Upload your meeting recording",
-            type=[fmt.lstrip('.') for fmt in Config.SUPPORTED_FORMATS],
-            help=f"Supported formats: {', '.join(fmt.lstrip('.') for fmt in Config.SUPPORTED_FORMATS)} (max {Config.MAX_FILE_SIZE_MB}MB)"
+            "Upload audio or transcript file",
+            type=[fmt.lstrip('.') for fmt in Config.ALL_UPLOAD_FORMATS],
+            help=f"Audio: {', '.join(Config.SUPPORTED_FORMATS)} | Transcript: {', '.join(Config.TEXT_FORMATS)}"
         )
         
         if uploaded_file:
@@ -196,95 +249,102 @@ def main():
         if st.button("🚀 Generate Meeting Minutes", type="primary", use_container_width=True):
             process_meeting(uploaded_file, manual_notes)
     else:
-        st.info("👆 Please upload an audio file to get started")
+        st.info("👆 Please upload an audio or transcript file to get started")
 
     if st.session_state.meeting_minutes:
         display_results()
 
 
 def process_meeting(uploaded_file, manual_notes: str):
-    """Process the meeting audio and generate minutes."""
-    # Clear previous results and widget states before processing new meeting
+    """Route to appropriate processor based on file type."""
     clear_previous_results()
 
+    file_ext = Path(uploaded_file.name).suffix.lower()
+
     try:
-        upload_path = Config.UPLOAD_DIR / uploaded_file.name
-        with open(upload_path, 'wb') as f:
-            f.write(uploaded_file.getbuffer())
-
-        is_valid, error_msg = validate_audio_file(upload_path)
-        if not is_valid:
-            st.error(f"❌ {error_msg}")
-            return
-
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-
-        def update_progress(message: str, progress: float):
-            status_text.info(f"⏳ {message}")
-            progress_bar.progress(progress)
-
-        # Step 1: Transcribe audio with Whisper + VAD
-        update_progress("Initializing audio processor...", 0.1)
-        audio_processor = AudioProcessor(
-            progress_callback=lambda msg: update_progress(msg, 0.2)
-        )
-
-        update_progress("Transcribing audio with Whisper + VAD...", 0.3)
-        # DEBUG: 오디오 처리 시작
-        print(f"[DEBUG] === 오디오 처리 시작 ===")
-        print(f"[DEBUG] 파일 경로: {upload_path}")
-        transcript_result = audio_processor.transcribe(upload_path)
-        # DEBUG: 오디오 처리 완료
-        print(f"[DEBUG] === 오디오 처리 완료 ===")
-        print(f"[DEBUG] 텍스트 길이: {len(transcript_result.get('text', ''))} 문자")
-        print(f"[DEBUG] 세그먼트 수: {len(transcript_result.get('segments', []))}개")
-        st.session_state.transcript_result = transcript_result
-
-        audio_processor.cleanup()
-        
-        if not transcript_result.get('text'):
-            st.warning("⚠️ No speech detected in the audio file")
-            return
-
-        # Step 2: Generate structured minutes with Gemini Pro
-        update_progress("Generating meeting minutes with Gemini Pro...", 0.6)
-        llm_processor = LLMProcessor()
-
-        try:
-            minutes = llm_processor.create_meeting_minutes(
-                transcript=transcript_result['text'],
-                manual_notes=manual_notes if manual_notes.strip() else None
-            )
-
-            st.session_state.meeting_minutes = minutes
-
-            update_progress("Complete! 🎉", 1.0)
-            status_text.success("✅ Meeting minutes generated successfully!")
-            progress_bar.empty()
-
-            upload_path.unlink(missing_ok=True)
-
-            # Force page refresh to display results
-            st.rerun()
-
-        except Exception as llm_error:
-            # LLM failed but transcript exists - save it to file
-            progress_bar.empty()
-            saved_path = save_transcript_on_error(
-                transcript_result['text'],
-                uploaded_file.name
-            )
-            upload_path.unlink(missing_ok=True)
-
-            st.warning(f"⚠️ LLM 처리 실패, transcript가 저장되었습니다")
-            st.info(f"📁 저장 위치: `{saved_path}`")
-            st.error(format_error_message(llm_error))
-            st.error("**Details:**")
-            st.code(traceback.format_exc())
-
+        if file_ext in Config.TEXT_FORMATS:
+            # TXT file: skip Whisper, process directly
+            process_transcript_file(uploaded_file, manual_notes)
+        else:
+            # Audio file: process with Whisper
+            process_audio_file(uploaded_file, manual_notes)
     except Exception as e:
         st.error(format_error_message(e))
+        st.error("**Details:**")
+        st.code(traceback.format_exc())
+
+
+def process_audio_file(uploaded_file, manual_notes: str):
+    """Process uploaded audio file with Whisper + VAD."""
+    upload_path = Config.UPLOAD_DIR / uploaded_file.name
+    with open(upload_path, 'wb') as f:
+        f.write(uploaded_file.getbuffer())
+
+    is_valid, error_msg = validate_audio_file(upload_path)
+    if not is_valid:
+        st.error(f"❌ {error_msg}")
+        return
+
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    def update_progress(message: str, progress: float):
+        status_text.info(f"⏳ {message}")
+        progress_bar.progress(progress)
+
+    # Step 1: Transcribe audio with Whisper + VAD
+    update_progress("Initializing audio processor...", 0.1)
+    audio_processor = AudioProcessor(
+        progress_callback=lambda msg: update_progress(msg, 0.2)
+    )
+
+    update_progress("Transcribing audio with Whisper + VAD...", 0.3)
+    print(f"[DEBUG] === 오디오 처리 시작 ===")
+    print(f"[DEBUG] 파일 경로: {upload_path}")
+    transcript_result = audio_processor.transcribe(upload_path)
+    print(f"[DEBUG] === 오디오 처리 완료 ===")
+    print(f"[DEBUG] 텍스트 길이: {len(transcript_result.get('text', ''))} 문자")
+    print(f"[DEBUG] 세그먼트 수: {len(transcript_result.get('segments', []))}개")
+    st.session_state.transcript_result = transcript_result
+
+    audio_processor.cleanup()
+
+    if not transcript_result.get('text'):
+        st.warning("⚠️ No speech detected in the audio file")
+        return
+
+    # Step 2: Generate structured minutes with Gemini Pro
+    update_progress("Generating meeting minutes with Gemini Pro...", 0.6)
+    llm_processor = LLMProcessor()
+
+    try:
+        minutes = llm_processor.create_meeting_minutes(
+            transcript=transcript_result['text'],
+            manual_notes=manual_notes if manual_notes.strip() else None
+        )
+
+        st.session_state.meeting_minutes = minutes
+
+        update_progress("Complete! 🎉", 1.0)
+        status_text.success("✅ Meeting minutes generated successfully!")
+        progress_bar.empty()
+
+        upload_path.unlink(missing_ok=True)
+
+        st.rerun()
+
+    except Exception as llm_error:
+        # LLM failed but transcript exists - save it to file
+        progress_bar.empty()
+        saved_path = save_transcript_on_error(
+            transcript_result['text'],
+            uploaded_file.name
+        )
+        upload_path.unlink(missing_ok=True)
+
+        st.warning(f"⚠️ LLM 처리 실패, transcript가 저장되었습니다")
+        st.info(f"📁 저장 위치: `{saved_path}`")
+        st.error(format_error_message(llm_error))
         st.error("**Details:**")
         st.code(traceback.format_exc())
 

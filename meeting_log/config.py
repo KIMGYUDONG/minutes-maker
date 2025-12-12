@@ -28,6 +28,10 @@ class Config:
     SUPPORTED_FORMATS = [".m4a", ".mp3", ".wav"]
     MAX_FILE_SIZE_MB = 500  # Maximum audio file size
 
+    # Text Configuration (for transcript upload)
+    TEXT_FORMATS = [".txt"]
+    ALL_UPLOAD_FORMATS = SUPPORTED_FORMATS + TEXT_FORMATS
+
     # VAD (Voice Activity Detection) Configuration
     VAD_SAMPLE_RATE = 16000  # Required sample rate for VAD
     VAD_THRESHOLD = 0.5  # Speech probability threshold
