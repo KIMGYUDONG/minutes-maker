@@ -68,6 +68,53 @@ def initialize_session_state():
         st.session_state.meeting_minutes = None
     if 'notion_url' not in st.session_state:
         st.session_state.notion_url = None
+    if 'processing_id' not in st.session_state:
+        st.session_state.processing_id = None
+
+
+def clear_previous_results():
+    """Clear previous meeting results and widget states for new processing."""
+    import time
+
+    # Clear widget states for text_area fields from previous processing
+    old_pid = st.session_state.processing_id
+    if old_pid:
+        widget_keys = [
+            f'edit_summary_{old_pid}',
+            f'edit_key_updates_{old_pid}',
+            f'edit_discussion_{old_pid}',
+            f'edit_action_items_{old_pid}'
+        ]
+        for key in widget_keys:
+            if key in st.session_state:
+                del st.session_state[key]
+
+    # Generate new processing ID to force widget re-creation
+    st.session_state.processing_id = str(int(time.time() * 1000))
+
+    # Clear previous results
+    st.session_state.transcript_result = None
+    st.session_state.meeting_minutes = None
+    st.session_state.notion_url = None
+
+
+def save_transcript_on_error(transcript_text: str, original_filename: str) -> str:
+    """Save transcript to file when LLM processing fails.
+
+    Args:
+        transcript_text: The transcribed text from audio
+        original_filename: Original audio filename for naming
+
+    Returns:
+        str: Path to the saved transcript file
+    """
+    base_name = Path(original_filename).stem
+    output_path = Config.UPLOAD_DIR / f"{base_name}_transcript.txt"
+
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(transcript_text)
+
+    return str(output_path)
 
 
 def validate_configuration():
@@ -157,6 +204,9 @@ def main():
 
 def process_meeting(uploaded_file, manual_notes: str):
     """Process the meeting audio and generate minutes."""
+    # Clear previous results and widget states before processing new meeting
+    clear_previous_results()
+
     try:
         upload_path = Config.UPLOAD_DIR / uploaded_file.name
         with open(upload_path, 'wb') as f:
@@ -201,21 +251,37 @@ def process_meeting(uploaded_file, manual_notes: str):
         update_progress("Generating meeting minutes with Gemini Pro...", 0.6)
         llm_processor = LLMProcessor()
 
-        minutes = llm_processor.create_meeting_minutes(
-            transcript=transcript_result['text'],
-            manual_notes=manual_notes if manual_notes.strip() else None
-        )
+        try:
+            minutes = llm_processor.create_meeting_minutes(
+                transcript=transcript_result['text'],
+                manual_notes=manual_notes if manual_notes.strip() else None
+            )
 
-        st.session_state.meeting_minutes = minutes
-        
-        update_progress("Complete! 🎉", 1.0)
-        status_text.success("✅ Meeting minutes generated successfully!")
-        progress_bar.empty()
+            st.session_state.meeting_minutes = minutes
 
-        upload_path.unlink(missing_ok=True)
+            update_progress("Complete! 🎉", 1.0)
+            status_text.success("✅ Meeting minutes generated successfully!")
+            progress_bar.empty()
 
-        # Force page refresh to display results
-        st.rerun()
+            upload_path.unlink(missing_ok=True)
+
+            # Force page refresh to display results
+            st.rerun()
+
+        except Exception as llm_error:
+            # LLM failed but transcript exists - save it to file
+            progress_bar.empty()
+            saved_path = save_transcript_on_error(
+                transcript_result['text'],
+                uploaded_file.name
+            )
+            upload_path.unlink(missing_ok=True)
+
+            st.warning(f"⚠️ LLM 처리 실패, transcript가 저장되었습니다")
+            st.info(f"📁 저장 위치: `{saved_path}`")
+            st.error(format_error_message(llm_error))
+            st.error("**Details:**")
+            st.code(traceback.format_exc())
 
     except Exception as e:
         st.error(format_error_message(e))
@@ -229,6 +295,8 @@ def display_results():
     st.markdown('<div class="section-header">📄 Generated Meeting Minutes</div>', unsafe_allow_html=True)
 
     minutes = st.session_state.meeting_minutes
+    # Use processing_id to create unique widget keys for each processing session
+    pid = st.session_state.processing_id or 'default'
 
     st.markdown("**Edit the sections below before sending to Notion:**")
 
@@ -237,7 +305,7 @@ def display_results():
         "Summary",
         value=minutes.get('summary', ''),
         height=100,
-        key='edit_summary',
+        key=f'edit_summary_{pid}',
         label_visibility='collapsed'
     )
 
@@ -246,7 +314,7 @@ def display_results():
         "Key Updates",
         value=minutes.get('key_updates', ''),
         height=150,
-        key='edit_key_updates',
+        key=f'edit_key_updates_{pid}',
         label_visibility='collapsed'
     )
 
@@ -255,7 +323,7 @@ def display_results():
         "Discussion Log",
         value=minutes.get('discussion_log', ''),
         height=200,
-        key='edit_discussion',
+        key=f'edit_discussion_{pid}',
         label_visibility='collapsed'
     )
 
@@ -264,7 +332,7 @@ def display_results():
         "Action Items",
         value=minutes.get('action_items', ''),
         height=150,
-        key='edit_action_items',
+        key=f'edit_action_items_{pid}',
         label_visibility='collapsed'
     )
 
