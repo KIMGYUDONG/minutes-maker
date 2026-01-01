@@ -25,9 +25,17 @@
 ![Processing](./docs/images/02-processing.png)
 *Whisper가 음성을 텍스트로 변환 중*
 
-### 3. Notion에 자동 저장
-![Result](./docs/images/03-notion-result.png)
-*요약, 업데이트, 액션 아이템이 구조화되어 저장*
+### 3. 회의록 생성 결과
+![Result Summary](./docs/images/03-result-summary.png)
+*Summary, Key Updates, Discussion Log 자동 생성*
+
+### 4. 액션 아이템 & Notion 전송
+![Result Actions](./docs/images/04-result-actions.png)
+*Action Items 생성 후 원클릭으로 Notion 전송*
+
+### 5. Notion에 저장 완료
+![Notion Page](./docs/images/05-notion-page.png)
+*구조화된 회의록이 Notion 페이지로 저장*
 
 ---
 
