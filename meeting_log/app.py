@@ -186,7 +186,13 @@ def show_sidebar():
     with st.sidebar:
         st.markdown("### 📋 Meeting Minutes Generator")
         st.markdown("---")
-        
+
+        # Demo mode banner
+        if Config.DEMO_MODE:
+            st.warning("🎭 **Demo Mode**")
+            st.caption("Processing is disabled in demo environment.")
+            st.markdown("---")
+
         st.markdown("#### ℹ️ How to Use")
         st.markdown("""
         1. **Upload Audio**: Upload your meeting recording (m4a, mp3, or wav)
@@ -195,17 +201,23 @@ def show_sidebar():
         4. **Edit**: Review and edit the output
         5. **Send**: Click 'Send to Notion'
         """)
-        
+
         st.markdown("---")
         st.markdown("#### ⚙️ System Info")
-        
-        import torch
-        if torch.cuda.is_available():
-            st.success(f"✅ GPU: {torch.cuda.get_device_name(0)}")
-            st.info(f"VRAM: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+
+        if Config.DEMO_MODE:
+            st.info("Demo environment - GPU info not available")
         else:
-            st.warning("⚠️ GPU not available")
-        
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    st.success(f"✅ GPU: {torch.cuda.get_device_name(0)}")
+                    st.info(f"VRAM: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+                else:
+                    st.warning("⚠️ GPU not available")
+            except ImportError:
+                st.warning("⚠️ PyTorch not installed")
+
         st.markdown(f"**Model**: {Config.WHISPER_MODEL}")
         st.markdown(f"**Fallback**: {Config.WHISPER_FALLBACK_MODEL}")
 
@@ -213,15 +225,28 @@ def show_sidebar():
 def main():
     """Main application."""
     initialize_session_state()
-    validate_configuration()
-    Config.setup_directories()
+
+    # Skip configuration validation in demo mode
+    if not Config.DEMO_MODE:
+        validate_configuration()
+        Config.setup_directories()
+
     show_sidebar()
 
     st.markdown('<div class="main-header">📋 Automated Meeting Minutes</div>', unsafe_allow_html=True)
     st.markdown("Transform your meeting recordings into structured minutes with AI")
 
+    # Demo mode banner at top
+    if Config.DEMO_MODE:
+        st.info(
+            "🎭 **Demo Environment** - "
+            "This is a portfolio demonstration. "
+            "File processing is disabled. "
+            "See the screenshots for actual results."
+        )
+
     col1, col2 = st.columns([1, 1])
-    
+
     with col1:
         st.markdown('<div class="section-header">📁 File Upload</div>', unsafe_allow_html=True)
         uploaded_file = st.file_uploader(
@@ -229,11 +254,11 @@ def main():
             type=[fmt.lstrip('.') for fmt in Config.ALL_UPLOAD_FORMATS],
             help=f"Audio: {', '.join(Config.SUPPORTED_FORMATS)} | Transcript: {', '.join(Config.TEXT_FORMATS)}"
         )
-        
+
         if uploaded_file:
             file_size_mb = len(uploaded_file.getvalue()) / (1024 * 1024)
             st.info(f"📁 {uploaded_file.name} ({file_size_mb:.1f} MB)")
-    
+
     with col2:
         st.markdown('<div class="section-header">📝 Manual Notes (Optional)</div>', unsafe_allow_html=True)
         manual_notes = st.text_area(
@@ -247,7 +272,14 @@ def main():
 
     if uploaded_file:
         if st.button("🚀 Generate Meeting Minutes", type="primary", use_container_width=True):
-            process_meeting(uploaded_file, manual_notes)
+            if Config.DEMO_MODE:
+                st.warning(
+                    "🎭 **Demo Mode Active** - "
+                    "Processing is disabled in this environment. "
+                    "In production, this would transcribe the audio and generate meeting minutes."
+                )
+            else:
+                process_meeting(uploaded_file, manual_notes)
     else:
         st.info("👆 Please upload an audio or transcript file to get started")
 

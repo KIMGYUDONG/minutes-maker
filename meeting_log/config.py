@@ -8,7 +8,10 @@ load_dotenv()
 
 class Config:
     """Application configuration."""
-    
+
+    # Demo Mode (for Streamlit Cloud deployment)
+    DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() == "true"
+
     # API Keys
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-pro")

@@ -1,0 +1,8 @@
+# Streamlit Cloud Demo Dependencies
+# Lightweight version without GPU/audio processing
+
+# Core Web Framework
+streamlit==1.29.0
+
+# Utilities
+python-dotenv==1.0.0
