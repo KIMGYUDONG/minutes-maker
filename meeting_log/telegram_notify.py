@@ -23,16 +23,26 @@ def send_telegram_notification(notion_url: str) -> bool:
 
     message = (
         "✅ 회의록 저장 완료\n"
-        f"📎 {notion_url}\n"
-        "→ /linear 실행하세요"
+        f"📎 {notion_url}"
     )
+
+    # 인라인 키보드 버튼 (맥북 텔레그램 데스크탑에서 클릭 시 URL 스킴 호출)
+    keyboard = {
+        "inline_keyboard": [[
+            {
+                "text": "🚀 Linear 이슈 등록",
+                "url": "https://kimgyudong.github.io/minutes-maker/runlinear.html"
+            }
+        ]]
+    }
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
 
     try:
         response = requests.post(url, json={
             "chat_id": chat_id,
-            "text": message
+            "text": message,
+            "reply_markup": keyboard
         }, timeout=10)
 
         if response.ok:
