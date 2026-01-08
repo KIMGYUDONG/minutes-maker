@@ -10,6 +10,7 @@ from utils import validate_audio_file, format_error_message
 from audio_processor import AudioProcessor
 from llm_processor import LLMProcessor
 from notion_integration import NotionClient
+from telegram_notify import send_telegram_notification
 
 
 # Page configuration
@@ -156,8 +157,26 @@ def process_transcript_file(uploaded_file, manual_notes: str):
 
         st.session_state.meeting_minutes = minutes
 
+        # 자동 노션 저장
+        status_text.info("⏳ 노션에 저장 중...")
+        progress_bar.progress(0.8)
+
+        notion_client = NotionClient()
+        url = notion_client.create_meeting_minutes(
+            summary=minutes.get('summary', ''),
+            key_updates=minutes.get('key_updates', ''),
+            discussion_log=minutes.get('discussion_log', ''),
+            action_items=minutes.get('action_items', '')
+        )
+        st.session_state.notion_url = url
+
+        # 텔레그램 알림
+        status_text.info("⏳ 텔레그램 알림 전송 중...")
+        progress_bar.progress(0.9)
+        send_telegram_notification(url)
+
         progress_bar.progress(1.0)
-        status_text.success("✅ Meeting minutes generated successfully!")
+        status_text.success("✅ 회의록이 노션에 저장되었습니다!")
         progress_bar.empty()
 
         st.rerun()
@@ -357,8 +376,24 @@ def process_audio_file(uploaded_file, manual_notes: str):
 
         st.session_state.meeting_minutes = minutes
 
-        update_progress("Complete! 🎉", 1.0)
-        status_text.success("✅ Meeting minutes generated successfully!")
+        # 자동 노션 저장
+        update_progress("노션에 저장 중...", 0.8)
+
+        notion_client = NotionClient()
+        url = notion_client.create_meeting_minutes(
+            summary=minutes.get('summary', ''),
+            key_updates=minutes.get('key_updates', ''),
+            discussion_log=minutes.get('discussion_log', ''),
+            action_items=minutes.get('action_items', '')
+        )
+        st.session_state.notion_url = url
+
+        # 텔레그램 알림
+        update_progress("텔레그램 알림 전송 중...", 0.9)
+        send_telegram_notification(url)
+
+        update_progress("완료!", 1.0)
+        status_text.success("✅ 회의록이 노션에 저장되었습니다!")
         progress_bar.empty()
 
         upload_path.unlink(missing_ok=True)
@@ -382,86 +417,16 @@ def process_audio_file(uploaded_file, manual_notes: str):
 
 
 def display_results():
-    """Display the generated meeting minutes with editing capability."""
+    """Display completion message after auto-save to Notion."""
     st.markdown("---")
-    st.markdown('<div class="section-header">📄 Generated Meeting Minutes</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">✅ 완료</div>', unsafe_allow_html=True)
 
-    minutes = st.session_state.meeting_minutes
-    # Use processing_id to create unique widget keys for each processing session
-    pid = st.session_state.processing_id or 'default'
-
-    st.markdown("**Edit the sections below before sending to Notion:**")
-
-    st.markdown("### 📝 Summary")
-    edited_summary = st.text_area(
-        "Summary",
-        value=minutes.get('summary', ''),
-        height=100,
-        key=f'edit_summary_{pid}',
-        label_visibility='collapsed'
-    )
-
-    st.markdown("### 🔑 Key Updates")
-    edited_key_updates = st.text_area(
-        "Key Updates",
-        value=minutes.get('key_updates', ''),
-        height=150,
-        key=f'edit_key_updates_{pid}',
-        label_visibility='collapsed'
-    )
-
-    st.markdown("### 💬 Discussion Log")
-    edited_discussion = st.text_area(
-        "Discussion Log",
-        value=minutes.get('discussion_log', ''),
-        height=200,
-        key=f'edit_discussion_{pid}',
-        label_visibility='collapsed'
-    )
-
-    st.markdown("### ✅ Action Items")
-    edited_action_items = st.text_area(
-        "Action Items",
-        value=minutes.get('action_items', ''),
-        height=150,
-        key=f'edit_action_items_{pid}',
-        label_visibility='collapsed'
-    )
-
-    st.markdown("---")
-
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        if st.button("📤 Send to Notion", type="primary", use_container_width=True):
-            send_to_notion(
-                edited_summary,
-                edited_key_updates,
-                edited_discussion,
-                edited_action_items
-            )
+    st.success("회의록이 노션에 자동 저장되었습니다!")
 
     if st.session_state.notion_url:
-        st.success(f"✅ Successfully sent to Notion!")
-        st.markdown(f"[🔗 Open in Notion]({st.session_state.notion_url})")
+        st.markdown(f"### 📎 [노션에서 보기]({st.session_state.notion_url})")
 
-
-def send_to_notion(summary: str, key_updates: str, discussion: str, action_items: str):
-    """Send the meeting minutes to Notion."""
-    try:
-        with st.spinner("Sending to Notion..."):
-            notion_client = NotionClient()
-            url = notion_client.create_meeting_minutes(
-                summary=summary,
-                key_updates=key_updates,
-                discussion_log=discussion,
-                action_items=action_items
-            )
-            st.session_state.notion_url = url
-            st.rerun()
-    except Exception as e:
-        st.error(format_error_message(e))
-        st.error("**Details:**")
-        st.code(traceback.format_exc())
+    st.info("💡 터미널에서 `cd bridge && claude` 실행 후 `/linear` 입력하여 Linear 이슈를 등록하세요")
 
 
 if __name__ == "__main__":
