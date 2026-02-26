@@ -100,8 +100,8 @@ def clear_previous_results():
     st.session_state.notion_url = None
 
 
-def save_transcript_on_error(transcript_text: str, original_filename: str) -> str:
-    """Save transcript to file when LLM processing fails.
+def save_transcript(transcript_text: str, original_filename: str) -> str:
+    """Save transcript to file for preservation.
 
     Args:
         transcript_text: The transcribed text from audio
@@ -367,6 +367,10 @@ def process_audio_file(uploaded_file, manual_notes: str):
         st.warning("⚠️ No speech detected in the audio file")
         return
 
+    # Save transcript immediately (preserve against later failures)
+    saved_path = save_transcript(transcript_result['text'], uploaded_file.name)
+    print(f"[DEBUG] 전사 결과 저장 완료 → {saved_path}"); sys.stdout.flush()
+
     # Step 2: Generate structured minutes with Gemini Pro
     update_progress("Generating meeting minutes with Gemini Pro...", 0.6)
     llm_processor = LLMProcessor()
@@ -412,12 +416,7 @@ def process_audio_file(uploaded_file, manual_notes: str):
 
     except Exception as llm_error:
         print(f"[DEBUG] ❌ LLM/후처리 예외: {type(llm_error).__name__}: {llm_error}"); sys.stdout.flush()
-        # LLM failed but transcript exists - save it to file
         progress_bar.empty()
-        saved_path = save_transcript_on_error(
-            transcript_result['text'],
-            uploaded_file.name
-        )
         upload_path.unlink(missing_ok=True)
 
         st.warning(f"⚠️ LLM 처리 실패, transcript가 저장되었습니다")
