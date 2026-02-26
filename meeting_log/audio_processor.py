@@ -54,8 +54,10 @@ class AudioProcessor:
     def _load_vad_model(self):
         """Load the silero-VAD model."""
         if self.vad_model is None:
+            print(f"[DEBUG] _load_vad_model: silero-VAD 로딩 시작")
             self._update_progress("Loading Voice Activity Detection model...")
             self.vad_model = load_silero_vad()
+            print(f"[DEBUG] _load_vad_model: silero-VAD 로딩 완료")
     
     def _load_whisper_model(self, model_name: str = None):
         """
@@ -71,6 +73,7 @@ class AudioProcessor:
             return
 
         try:
+            print(f"[DEBUG] _load_whisper_model: {model_name} 로딩 시작 (device={self.device})")
             self._update_progress(f"Loading Whisper model ({model_name})...")
 
             if self.model is not None:
@@ -83,6 +86,7 @@ class AudioProcessor:
             )
 
             self.current_model_name = model_name
+            print(f"[DEBUG] _load_whisper_model: {model_name} 로딩 완료")
             self._update_progress(f"✅ Loaded {model_name} on {self.device}")
             
         except RuntimeError as e:
@@ -129,12 +133,15 @@ class AudioProcessor:
         if audio_path.suffix.lower() == ".wav":
             return audio_path
 
+        print(f"[DEBUG] _convert_to_wav: 입력={audio_path}, 확장자={audio_path.suffix}")
         self._update_progress(f"Converting {audio_path.suffix} to WAV...")
 
         audio = AudioSegment.from_file(str(audio_path))
+        print(f"[DEBUG] _convert_to_wav: pydub 로드 완료 (길이={len(audio)}ms)")
         wav_path = audio_path.with_suffix(".wav")
         audio.export(str(wav_path), format="wav")
-        
+        print(f"[DEBUG] _convert_to_wav: WAV 저장 완료 → {wav_path}")
+
         return wav_path
     
     def _apply_vad(self, audio_path: Path) -> list:
@@ -150,17 +157,23 @@ class AudioProcessor:
         self._load_vad_model()
         self._update_progress("Detecting speech segments with VAD...")
 
+        print(f"[DEBUG] _apply_vad: torchaudio.load 시작")
         wav, sample_rate = torchaudio.load(str(audio_path))
+        print(f"[DEBUG] _apply_vad: 로드 완료 (shape={wav.shape}, sr={sample_rate})")
 
         if wav.shape[0] > 1:
             wav = torch.mean(wav, dim=0, keepdim=True)
+            print(f"[DEBUG] _apply_vad: 스테레오→모노 변환 완료")
 
         # silero-VAD requires 16kHz sample rate
         if sample_rate != Config.VAD_SAMPLE_RATE:
+            print(f"[DEBUG] _apply_vad: 리샘플링 시작 ({sample_rate} → {Config.VAD_SAMPLE_RATE})")
             resampler = torchaudio.transforms.Resample(sample_rate, Config.VAD_SAMPLE_RATE)
             wav = resampler(wav)
             sample_rate = Config.VAD_SAMPLE_RATE
+            print(f"[DEBUG] _apply_vad: 리샘플링 완료")
 
+        print(f"[DEBUG] _apply_vad: get_speech_timestamps 시작 (프로그레스 바 여기서 출력)")
         speech_timestamps = get_speech_timestamps(
             wav.squeeze(),
             self.vad_model,
@@ -169,6 +182,7 @@ class AudioProcessor:
             min_speech_duration_ms=Config.VAD_MIN_SPEECH_MS,
             min_silence_duration_ms=Config.VAD_MIN_SILENCE_MS,
         )
+        print(f"[DEBUG] _apply_vad: get_speech_timestamps 완료 → {len(speech_timestamps)}개 구간")
         
         total_speech_time = sum(
             (ts['end'] - ts['start']) / sample_rate
@@ -193,10 +207,16 @@ class AudioProcessor:
             Dictionary with transcript and segments
         """
         try:
+            print(f"[DEBUG] Step 1: WAV 변환 시작")
             wav_path = self._convert_to_wav(audio_path)
+            print(f"[DEBUG] Step 1: WAV 변환 완료 → {wav_path}")
 
             # Check duration for long audio handling (SPEC-005)
+            print(f"[DEBUG] Step 2: 오디오 길이 확인")
             duration = self._get_audio_duration(wav_path)
+            print(f"[DEBUG] Step 2: 길이 = {duration:.1f}초 ({duration/60:.1f}분)")
+
+            print(f"[DEBUG] Step 3: 긴 오디오 여부 = {self._is_long_audio(duration)}")
 
             if self._is_long_audio(duration):
                 # Long audio strategy: Segment and process
@@ -249,9 +269,12 @@ class AudioProcessor:
 
             else:
                 # Regular audio strategy: Process as single unit
+                print(f"[DEBUG] Step 4: VAD 시작")
                 speech_timestamps = self._apply_vad(wav_path)
+                print(f"[DEBUG] Step 4: VAD 완료 → {len(speech_timestamps)}개 구간")
 
                 if not speech_timestamps:
+                    print(f"[DEBUG] 음성 미감지, 빈 결과 반환")
                     return {
                         "text": "",
                         "segments": [],
@@ -259,12 +282,15 @@ class AudioProcessor:
                     }
 
                 # Load Whisper model
+                print(f"[DEBUG] Step 5: Whisper 모델 로딩")
                 self._load_whisper_model()
+                print(f"[DEBUG] Step 5: Whisper 모델 로딩 완료")
 
                 # Transcribe with Whisper
                 self._update_progress("Transcribing audio with Whisper...")
 
                 try:
+                    print(f"[DEBUG] Step 6: Whisper 전사 시작")
                     result = self.model.transcribe(
                         str(wav_path),
                         language="ko",  # Auto-detect, but prioritize Korean
@@ -272,6 +298,7 @@ class AudioProcessor:
                         fp16=False, # Fix: Force FP32 to avoid LayerNorm errors
                         verbose=False,
                     )
+                    print(f"[DEBUG] Step 6: Whisper 전사 완료 ({len(result['text'])} 문자)")
 
                     self._update_progress("✅ Transcription complete")
 
@@ -300,6 +327,7 @@ class AudioProcessor:
                         raise
 
         except Exception as e:
+            print(f"[DEBUG] ❌ 예외 발생: {type(e).__name__}: {e}")
             raise RuntimeError(f"Transcription failed: {str(e)}")
     
     def _get_audio_duration(self, audio_path: Path) -> float:
