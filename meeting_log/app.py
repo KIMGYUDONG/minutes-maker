@@ -1,5 +1,6 @@
 """Streamlit UI for the meeting minutes service."""
 
+import sys
 import streamlit as st
 from pathlib import Path
 import traceback
@@ -353,12 +354,14 @@ def process_audio_file(uploaded_file, manual_notes: str):
     print(f"[DEBUG] === 오디오 처리 시작 ===")
     print(f"[DEBUG] 파일 경로: {upload_path}")
     transcript_result = audio_processor.transcribe(upload_path)
-    print(f"[DEBUG] === 오디오 처리 완료 ===")
+    print(f"[DEBUG] === 오디오 처리 완료 ==="); sys.stdout.flush()
     print(f"[DEBUG] 텍스트 길이: {len(transcript_result.get('text', ''))} 문자")
-    print(f"[DEBUG] 세그먼트 수: {len(transcript_result.get('segments', []))}개")
+    print(f"[DEBUG] 세그먼트 수: {len(transcript_result.get('segments', []))}개"); sys.stdout.flush()
     st.session_state.transcript_result = transcript_result
 
+    print(f"[DEBUG] cleanup 시작"); sys.stdout.flush()
     audio_processor.cleanup()
+    print(f"[DEBUG] cleanup 완료"); sys.stdout.flush()
 
     if not transcript_result.get('text'):
         st.warning("⚠️ No speech detected in the audio file")
@@ -369,16 +372,19 @@ def process_audio_file(uploaded_file, manual_notes: str):
     llm_processor = LLMProcessor()
 
     try:
+        print(f"[DEBUG] Step 7: Gemini API 호출 시작 (모델: {Config.GEMINI_MODEL_NAME})"); sys.stdout.flush()
         minutes = llm_processor.create_meeting_minutes(
             transcript=transcript_result['text'],
             manual_notes=manual_notes if manual_notes.strip() else None
         )
+        print(f"[DEBUG] Step 7: Gemini API 완료"); sys.stdout.flush()
 
         st.session_state.meeting_minutes = minutes
 
         # 자동 노션 저장
         update_progress("노션에 저장 중...", 0.8)
 
+        print(f"[DEBUG] Step 8: Notion 저장 시작"); sys.stdout.flush()
         notion_client = NotionClient()
         url = notion_client.create_meeting_minutes(
             summary=minutes.get('summary', ''),
@@ -387,20 +393,25 @@ def process_audio_file(uploaded_file, manual_notes: str):
             action_items=minutes.get('action_items', '')
         )
         st.session_state.notion_url = url
+        print(f"[DEBUG] Step 8: Notion 저장 완료 → {url}"); sys.stdout.flush()
 
         # 텔레그램 알림
         update_progress("텔레그램 알림 전송 중...", 0.9)
+        print(f"[DEBUG] Step 9: 텔레그램 알림 전송"); sys.stdout.flush()
         send_telegram_notification(url)
+        print(f"[DEBUG] Step 9: 텔레그램 완료"); sys.stdout.flush()
 
         update_progress("완료!", 1.0)
         status_text.success("✅ 회의록이 노션에 저장되었습니다!")
         progress_bar.empty()
 
         upload_path.unlink(missing_ok=True)
+        print(f"[DEBUG] === 전체 파이프라인 완료 ==="); sys.stdout.flush()
 
         st.rerun()
 
     except Exception as llm_error:
+        print(f"[DEBUG] ❌ LLM/후처리 예외: {type(llm_error).__name__}: {llm_error}"); sys.stdout.flush()
         # LLM failed but transcript exists - save it to file
         progress_bar.empty()
         saved_path = save_transcript_on_error(

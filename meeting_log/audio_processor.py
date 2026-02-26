@@ -1,5 +1,6 @@
 """Audio processing module using Whisper and silero-VAD."""
 
+import sys
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -207,16 +208,16 @@ class AudioProcessor:
             Dictionary with transcript and segments
         """
         try:
-            print(f"[DEBUG] Step 1: WAV 변환 시작")
+            print(f"[DEBUG] Step 1: WAV 변환 시작"); sys.stdout.flush()
             wav_path = self._convert_to_wav(audio_path)
-            print(f"[DEBUG] Step 1: WAV 변환 완료 → {wav_path}")
+            print(f"[DEBUG] Step 1: WAV 변환 완료 → {wav_path}"); sys.stdout.flush()
 
             # Check duration for long audio handling (SPEC-005)
             print(f"[DEBUG] Step 2: 오디오 길이 확인")
             duration = self._get_audio_duration(wav_path)
-            print(f"[DEBUG] Step 2: 길이 = {duration:.1f}초 ({duration/60:.1f}분)")
+            print(f"[DEBUG] Step 2: 길이 = {duration:.1f}초 ({duration/60:.1f}분)"); sys.stdout.flush()
 
-            print(f"[DEBUG] Step 3: 긴 오디오 여부 = {self._is_long_audio(duration)}")
+            print(f"[DEBUG] Step 3: 긴 오디오 여부 = {self._is_long_audio(duration)}"); sys.stdout.flush()
 
             if self._is_long_audio(duration):
                 # Long audio strategy: Segment and process
@@ -269,9 +270,9 @@ class AudioProcessor:
 
             else:
                 # Regular audio strategy: Process as single unit
-                print(f"[DEBUG] Step 4: VAD 시작")
+                print(f"[DEBUG] Step 4: VAD 시작"); sys.stdout.flush()
                 speech_timestamps = self._apply_vad(wav_path)
-                print(f"[DEBUG] Step 4: VAD 완료 → {len(speech_timestamps)}개 구간")
+                print(f"[DEBUG] Step 4: VAD 완료 → {len(speech_timestamps)}개 구간"); sys.stdout.flush()
 
                 if not speech_timestamps:
                     print(f"[DEBUG] 음성 미감지, 빈 결과 반환")
@@ -282,15 +283,15 @@ class AudioProcessor:
                     }
 
                 # Load Whisper model
-                print(f"[DEBUG] Step 5: Whisper 모델 로딩")
+                print(f"[DEBUG] Step 5: Whisper 모델 로딩"); sys.stdout.flush()
                 self._load_whisper_model()
-                print(f"[DEBUG] Step 5: Whisper 모델 로딩 완료")
+                print(f"[DEBUG] Step 5: Whisper 모델 로딩 완료"); sys.stdout.flush()
 
                 # Transcribe with Whisper
                 self._update_progress("Transcribing audio with Whisper...")
 
                 try:
-                    print(f"[DEBUG] Step 6: Whisper 전사 시작")
+                    print(f"[DEBUG] Step 6: Whisper 전사 시작"); sys.stdout.flush()
                     result = self.model.transcribe(
                         str(wav_path),
                         language="ko",  # Auto-detect, but prioritize Korean
@@ -298,10 +299,11 @@ class AudioProcessor:
                         fp16=False, # Fix: Force FP32 to avoid LayerNorm errors
                         verbose=False,
                     )
-                    print(f"[DEBUG] Step 6: Whisper 전사 완료 ({len(result['text'])} 문자)")
+                    print(f"[DEBUG] Step 6: Whisper 전사 완료 ({len(result['text'])} 문자)"); sys.stdout.flush()
 
                     self._update_progress("✅ Transcription complete")
 
+                    print(f"[DEBUG] Step 6: 결과 포맷팅 시작 ({len(result['segments'])}개 세그먼트)"); sys.stdout.flush()
                     # Format results
                     return {
                         "text": result["text"].strip(),
@@ -327,7 +329,7 @@ class AudioProcessor:
                         raise
 
         except Exception as e:
-            print(f"[DEBUG] ❌ 예외 발생: {type(e).__name__}: {e}")
+            print(f"[DEBUG] ❌ 예외 발생: {type(e).__name__}: {e}"); sys.stdout.flush()
             raise RuntimeError(f"Transcription failed: {str(e)}")
     
     def _get_audio_duration(self, audio_path: Path) -> float:
