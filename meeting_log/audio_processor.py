@@ -50,7 +50,10 @@ class AudioProcessor:
     def _update_progress(self, message: str):
         """Update progress via callback if available."""
         if self.progress_callback:
-            self.progress_callback(message)
+            try:
+                self.progress_callback(message)
+            except Exception:
+                self.progress_callback = None
     
     def _load_vad_model(self):
         """Load the silero-VAD model."""

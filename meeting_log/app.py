@@ -341,8 +341,11 @@ def process_audio_file(uploaded_file, manual_notes: str):
     status_text = st.empty()
 
     def update_progress(message: str, progress: float):
-        status_text.info(f"⏳ {message}")
-        progress_bar.progress(progress)
+        try:
+            status_text.info(f"⏳ {message}")
+            progress_bar.progress(progress)
+        except Exception:
+            pass
 
     # Step 1: Transcribe audio with Whisper + VAD
     update_progress("Initializing audio processor...", 0.1)
