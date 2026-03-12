@@ -8,6 +8,7 @@ import torch
 import whisper
 from pathlib import Path
 from typing import Optional, Callable
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import torchaudio
 # soundfile backend ensures cross-platform compatibility (especially Windows)
 try:
@@ -44,6 +45,7 @@ class AudioProcessor:
         self.LONG_AUDIO_THRESHOLD = 3600        # 1 hour in seconds
         self.SEGMENT_DURATION = 1800            # 30 minutes in seconds
         self.SEGMENT_OVERLAP = 30               # 30 seconds overlap
+        self.MIN_SEGMENT_DURATION = 60          # minimum segment length in seconds
 
         self._update_progress("Initializing audio processor...")
     
@@ -411,6 +413,23 @@ class AudioProcessor:
             start_sample = end_sample
             index += 1
 
+        # Merge short final segment into previous to prevent GPU hang
+        # waveform, sample_rate, total_samples are still in scope from above
+        if len(segments) > 1:
+            last = segments[-1]
+            if last["duration"] < self.MIN_SEGMENT_DURATION:
+                prev = segments[-2]
+                extended_end = total_samples
+                start_pos = int(prev["start_time"] * sample_rate)
+                extended_waveform = waveform[:, start_pos:extended_end]
+
+                torchaudio.save(str(prev["path"]), extended_waveform, sample_rate)
+                prev["end_time"] = last["end_time"]
+                prev["duration"] = (extended_end - start_pos) / sample_rate
+
+                last["path"].unlink(missing_ok=True)
+                segments.pop()
+
         self._update_progress(f"Created {len(segments)} segments")
         return segments
 
@@ -435,14 +454,32 @@ class AudioProcessor:
                 f"분석 중: 세그먼트 {segment['index'] + 1}/{self.total_segments} ({percent}%)"
             )
 
-            # Transcribe with Whisper
-            result = self.model.transcribe(
+            # Transcribe with Whisper (timeout safety net)
+            timeout_seconds = max(int(segment.get("duration", 1800) * 0.5), 300)
+            executor = ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(
+                self.model.transcribe,
                 str(segment["path"]),
                 language="ko",
                 task="transcribe",
                 fp16=False,
-                verbose=False
+                verbose=False,
             )
+            try:
+                result = future.result(timeout=timeout_seconds)
+            except FuturesTimeoutError:
+                print(f"[DEBUG] ⚠️ Segment {segment['index'] + 1} timed out after {timeout_seconds}s")
+                executor.shutdown(wait=False, cancel_futures=True)
+                return {
+                    "index": segment["index"],
+                    "text": "",
+                    "segments": [],
+                    "start_time": segment["start_time"],
+                    "duration": segment.get("duration", 0),
+                    "error": f"Transcription timed out after {timeout_seconds}s"
+                }
+            finally:
+                executor.shutdown(wait=False)
 
             # DEBUG: Whisper 전사 완료
             print(f"[DEBUG] ✓ 세그먼트 {segment['index'] + 1} 전사 완료 ({len(result['text'])} 문자)")
@@ -457,7 +494,8 @@ class AudioProcessor:
                 "index": segment["index"],
                 "text": result["text"].strip(),
                 "segments": result["segments"],
-                "start_time": segment["start_time"]
+                "start_time": segment["start_time"],
+                "duration": segment.get("duration", 0)
             }
 
         except Exception as e:
@@ -498,11 +536,16 @@ class AudioProcessor:
                 merged_segments.extend(result["segments"])
             else:
                 # Subsequent segments: trim overlap (simple text-based)
-                # Skip segments in the overlap region (first 30 seconds)
-                trimmed_segs = [
-                    seg for seg in result["segments"]
-                    if seg["start"] >= self.SEGMENT_OVERLAP
-                ]
+                segment_duration = result.get("duration", float('inf'))
+                if segment_duration <= self.SEGMENT_OVERLAP:
+                    # Segment shorter than overlap: keep all (no trimming)
+                    trimmed_segs = result["segments"]
+                else:
+                    # Skip segments in the overlap region (first 30 seconds)
+                    trimmed_segs = [
+                        seg for seg in result["segments"]
+                        if seg["start"] >= self.SEGMENT_OVERLAP
+                    ]
 
                 # Adjust timestamps
                 for seg in trimmed_segs:

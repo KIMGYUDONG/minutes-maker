@@ -7,11 +7,13 @@ Follows Kent Beck's Chicago School TDD principles.
 """
 
 import pytest
+import tempfile
 from pathlib import Path
 
 # Skip all tests in this module if torch is not available
 try:
     import torch
+    import torchaudio
     HAS_TORCH = True
 except ImportError:
     HAS_TORCH = False
@@ -131,3 +133,59 @@ class TestAudioSegmentation:
 
 # Note: Full integration tests with real 2-hour audio will be added
 # after implementation is working with shorter test files.
+
+
+def _create_silent_wav(duration_seconds: float, sample_rate: int = 16000) -> Path:
+    """Create a silent WAV file for testing segmentation logic."""
+    samples = int(duration_seconds * sample_rate)
+    waveform = torch.zeros(1, samples)
+    path = Path(tempfile.mktemp(suffix=".wav"))
+    torchaudio.save(str(path), waveform, sample_rate)
+    return path
+
+
+class TestShortFinalSegment:
+    """Short final segments should be merged into previous segment."""
+
+    def test_short_final_segment_merged_into_previous(self):
+        """When last segment < MIN_SEGMENT_DURATION, merge into previous."""
+        processor = AudioProcessor()
+        # 60.5 min = 3630s -> would create 3 segments (1800, 1800, 30)
+        # After merge: 2 segments (1800, 1830)
+        wav_path = _create_silent_wav(3630)
+        try:
+            segments = processor._segment_audio(wav_path)
+            assert len(segments) == 2
+            assert segments[-1]["duration"] > processor.MIN_SEGMENT_DURATION
+        finally:
+            wav_path.unlink(missing_ok=True)
+            for seg in segments:
+                seg["path"].unlink(missing_ok=True)
+
+    def test_segment_at_boundary_not_merged(self):
+        """When last segment >= MIN_SEGMENT_DURATION, keep it separate."""
+        processor = AudioProcessor()
+        # 62 min = 3720s -> 3 segments (1800, 1800, 120)
+        # 120s > 60s MIN -> keep 3 segments
+        wav_path = _create_silent_wav(3720)
+        try:
+            segments = processor._segment_audio(wav_path)
+            assert len(segments) == 3
+        finally:
+            wav_path.unlink(missing_ok=True)
+            for seg in segments:
+                seg["path"].unlink(missing_ok=True)
+
+    def test_overlap_trimming_handles_short_segment(self):
+        """_merge_transcripts doesn't discard text from short segments."""
+        processor = AudioProcessor()
+        segment_results = [
+            {"index": 0, "text": "first", "segments": [
+                {"start": 0, "end": 10, "text": "first"}
+            ], "start_time": 0, "duration": 1800},
+            {"index": 1, "text": "second", "segments": [
+                {"start": 5, "end": 20, "text": "second"}
+            ], "start_time": 1800, "duration": 25},  # < SEGMENT_OVERLAP (30s)
+        ]
+        merged = processor._merge_transcripts(segment_results)
+        assert "second" in merged["text"]  # Must NOT be trimmed
