@@ -36,6 +36,9 @@ Thumbs.db
 # Spec Kit (Claude Code agent folder - may contain credentials)
 .claude/
 
+# oh-my-claudecode internal state
+.omc/
+
 # Testing and Coverage
 .pytest_cache/
 .coverage
