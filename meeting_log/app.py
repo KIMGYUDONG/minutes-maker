@@ -5,6 +5,8 @@ import streamlit as st
 from pathlib import Path
 import traceback
 from datetime import datetime
+import threading
+import time
 
 from config import Config
 from utils import validate_audio_file, format_error_message
@@ -12,6 +14,9 @@ from audio_processor import AudioProcessor
 from llm_processor import LLMProcessor
 from notion_integration import NotionClient
 from telegram_notify import send_telegram_notification
+
+# Module-level worker registry (survives Streamlit reruns, not serialized)
+_active_workers: dict[str, threading.Thread] = {}
 
 
 # Page configuration
@@ -303,7 +308,44 @@ def main():
     else:
         st.info("👆 Please upload an audio or transcript file to get started")
 
-    if st.session_state.meeting_minutes:
+    # Active processing: show polling UI
+    worker_id = st.session_state.get("worker_id")
+    if worker_id and st.session_state.get("progress_state"):
+        state = st.session_state.progress_state
+
+        if state["status"] == "done":
+            # Transfer results to session state and cleanup
+            st.session_state.meeting_minutes = state.get("minutes")
+            st.session_state.notion_url = state.get("notion_url")
+            st.session_state.worker_id = None
+            _active_workers.pop(worker_id, None)
+            st.rerun()
+
+        elif state["status"] == "error":
+            st.error(f"❌ {state['error']}")
+            if state.get("transcript_path"):
+                st.info(f"📁 Transcript 저장됨: `{state['transcript_path']}`")
+            st.session_state.worker_id = None
+            _active_workers.pop(worker_id, None)
+
+        else:
+            # Running: show progress and poll
+            st.progress(state["progress"])
+            status_text = st.empty()
+            status_text.info(f"⏳ {state['message']}")
+
+            # Safety check: thread alive?
+            thread = _active_workers.get(worker_id)
+            if thread and not thread.is_alive() and state["status"] == "running":
+                st.error("Processing failed unexpectedly. Check server logs.")
+                st.session_state.worker_id = None
+                _active_workers.pop(worker_id, None)
+            else:
+                poll_interval = 5 if state["progress"] < 0.5 else 1
+                time.sleep(poll_interval)
+                st.rerun()
+
+    elif st.session_state.meeting_minutes:
         display_results()
 
 
@@ -327,7 +369,7 @@ def process_meeting(uploaded_file, manual_notes: str):
 
 
 def process_audio_file(uploaded_file, manual_notes: str):
-    """Process uploaded audio file with Whisper + VAD."""
+    """Start audio processing in background thread."""
     upload_path = Config.UPLOAD_DIR / uploaded_file.name
     with open(upload_path, 'wb') as f:
         f.write(uploaded_file.getbuffer())
@@ -337,96 +379,110 @@ def process_audio_file(uploaded_file, manual_notes: str):
         st.error(f"❌ {error_msg}")
         return
 
-    progress_bar = st.progress(0)
-    status_text = st.empty()
+    # Capture values before thread start (UploadedFile may become invalid after rerun)
+    file_name = uploaded_file.name
+    notes_text = manual_notes.strip() if manual_notes else ""
 
-    def update_progress(message: str, progress: float):
+    # Shared progress state (dict, thread-safe for simple read/write via GIL)
+    progress_state = {
+        "phase": "whisper",
+        "message": "Initializing audio processor...",
+        "progress": 0.1,
+        "status": "running",  # running | done | error
+        "transcript_path": None,
+        "notion_url": None,
+        "minutes": None,
+        "error": None,
+    }
+
+    worker_id = str(int(time.time() * 1000))
+    st.session_state.progress_state = progress_state
+    st.session_state.worker_id = worker_id
+
+    def background_work():
+        audio_processor = None
         try:
-            status_text.info(f"⏳ {message}")
-            progress_bar.progress(progress)
-        except Exception:
-            pass
+            def update_fn(msg):
+                progress_state["message"] = msg
 
-    # Step 1: Transcribe audio with Whisper + VAD
-    update_progress("Initializing audio processor...", 0.1)
-    audio_processor = AudioProcessor(
-        progress_callback=lambda msg: update_progress(msg, 0.2)
-    )
+            # Phase: Whisper
+            progress_state["phase"] = "whisper"
+            progress_state["progress"] = 0.1
+            print(f"[DEBUG] === 오디오 처리 시작 ===")
+            print(f"[DEBUG] 파일 경로: {upload_path}")
 
-    update_progress("Transcribing audio with Whisper + VAD...", 0.3)
-    print(f"[DEBUG] === 오디오 처리 시작 ===")
-    print(f"[DEBUG] 파일 경로: {upload_path}")
-    transcript_result = audio_processor.transcribe(upload_path)
-    print(f"[DEBUG] === 오디오 처리 완료 ==="); sys.stdout.flush()
-    print(f"[DEBUG] 텍스트 길이: {len(transcript_result.get('text', ''))} 문자")
-    print(f"[DEBUG] 세그먼트 수: {len(transcript_result.get('segments', []))}개"); sys.stdout.flush()
-    st.session_state.transcript_result = transcript_result
+            audio_processor = AudioProcessor(progress_callback=update_fn)
+            transcript_result = audio_processor.transcribe(upload_path)
 
-    print(f"[DEBUG] cleanup 시작"); sys.stdout.flush()
-    audio_processor.cleanup()
-    print(f"[DEBUG] cleanup 완료"); sys.stdout.flush()
+            print(f"[DEBUG] === 오디오 처리 완료 ==="); sys.stdout.flush()
+            audio_processor.cleanup()
 
-    if not transcript_result.get('text'):
-        st.warning("⚠️ No speech detected in the audio file")
-        return
+            if not transcript_result.get('text'):
+                progress_state["error"] = "No speech detected"
+                progress_state["status"] = "error"
+                return
 
-    # Save transcript immediately (preserve against later failures)
-    saved_path = save_transcript(transcript_result['text'], uploaded_file.name)
-    print(f"[DEBUG] 전사 결과 저장 완료 → {saved_path}"); sys.stdout.flush()
+            # Save transcript immediately (uses captured file_name, not uploaded_file)
+            saved_path = save_transcript(transcript_result['text'], file_name)
+            progress_state["transcript_path"] = saved_path
+            print(f"[DEBUG] 전사 결과 저장 완료 → {saved_path}"); sys.stdout.flush()
 
-    # Step 2: Generate structured minutes with Gemini Pro
-    update_progress("Generating meeting minutes with Gemini Pro...", 0.6)
-    llm_processor = LLMProcessor()
+            # Phase: LLM
+            progress_state["phase"] = "llm"
+            progress_state["message"] = "Generating meeting minutes with Gemini Pro..."
+            progress_state["progress"] = 0.6
+            llm_processor = LLMProcessor()
+            minutes = llm_processor.create_meeting_minutes(
+                transcript=transcript_result['text'],
+                manual_notes=notes_text if notes_text else None
+            )
+            progress_state["minutes"] = minutes
+            print(f"[DEBUG] Gemini API 완료"); sys.stdout.flush()
 
-    try:
-        print(f"[DEBUG] Step 7: Gemini API 호출 시작 (모델: {Config.GEMINI_MODEL_NAME})"); sys.stdout.flush()
-        minutes = llm_processor.create_meeting_minutes(
-            transcript=transcript_result['text'],
-            manual_notes=manual_notes if manual_notes.strip() else None
-        )
-        print(f"[DEBUG] Step 7: Gemini API 완료"); sys.stdout.flush()
+            # Phase: Notion
+            progress_state["phase"] = "notion"
+            progress_state["message"] = "노션에 저장 중..."
+            progress_state["progress"] = 0.8
+            notion_client = NotionClient()
+            url = notion_client.create_meeting_minutes(
+                summary=minutes.get('summary', ''),
+                key_updates=minutes.get('key_updates', ''),
+                discussion_log=minutes.get('discussion_log', ''),
+                action_items=minutes.get('action_items', '')
+            )
+            progress_state["notion_url"] = url
+            print(f"[DEBUG] Notion 저장 완료 → {url}"); sys.stdout.flush()
 
-        st.session_state.meeting_minutes = minutes
+            # Phase: Telegram
+            progress_state["phase"] = "telegram"
+            progress_state["message"] = "텔레그램 알림 전송 중..."
+            progress_state["progress"] = 0.9
+            send_telegram_notification(url)
+            print(f"[DEBUG] 텔레그램 완료"); sys.stdout.flush()
 
-        # 자동 노션 저장
-        update_progress("노션에 저장 중...", 0.8)
+            # Done - set status="done" LAST (polling UI trigger)
+            upload_path.unlink(missing_ok=True)
+            progress_state["progress"] = 1.0
+            progress_state["message"] = "완료!"
+            progress_state["status"] = "done"
+            print(f"[DEBUG] === 전체 파이프라인 완료 ==="); sys.stdout.flush()
 
-        print(f"[DEBUG] Step 8: Notion 저장 시작"); sys.stdout.flush()
-        notion_client = NotionClient()
-        url = notion_client.create_meeting_minutes(
-            summary=minutes.get('summary', ''),
-            key_updates=minutes.get('key_updates', ''),
-            discussion_log=minutes.get('discussion_log', ''),
-            action_items=minutes.get('action_items', '')
-        )
-        st.session_state.notion_url = url
-        print(f"[DEBUG] Step 8: Notion 저장 완료 → {url}"); sys.stdout.flush()
+        except Exception as e:
+            print(f"[DEBUG] ❌ 파이프라인 예외: {type(e).__name__}: {e}"); sys.stdout.flush()
+            progress_state["error"] = str(e)
+            progress_state["status"] = "error"
+            upload_path.unlink(missing_ok=True)
+        finally:
+            try:
+                if audio_processor:
+                    audio_processor.cleanup()
+            except Exception:
+                pass
 
-        # 텔레그램 알림
-        update_progress("텔레그램 알림 전송 중...", 0.9)
-        print(f"[DEBUG] Step 9: 텔레그램 알림 전송"); sys.stdout.flush()
-        send_telegram_notification(url)
-        print(f"[DEBUG] Step 9: 텔레그램 완료"); sys.stdout.flush()
-
-        update_progress("완료!", 1.0)
-        status_text.success("✅ 회의록이 노션에 저장되었습니다!")
-        progress_bar.empty()
-
-        upload_path.unlink(missing_ok=True)
-        print(f"[DEBUG] === 전체 파이프라인 완료 ==="); sys.stdout.flush()
-
-        st.rerun()
-
-    except Exception as llm_error:
-        print(f"[DEBUG] ❌ LLM/후처리 예외: {type(llm_error).__name__}: {llm_error}"); sys.stdout.flush()
-        progress_bar.empty()
-        upload_path.unlink(missing_ok=True)
-
-        st.warning(f"⚠️ LLM 처리 실패, transcript가 저장되었습니다")
-        st.info(f"📁 저장 위치: `{saved_path}`")
-        st.error(format_error_message(llm_error))
-        st.error("**Details:**")
-        st.code(traceback.format_exc())
+    thread = threading.Thread(target=background_work, daemon=True)
+    _active_workers[worker_id] = thread
+    thread.start()
+    st.rerun()
 
 
 def display_results():
