@@ -420,6 +420,215 @@ class NotionClient:
             blocks.append(block)
         return blocks
     
+    def create_soomgo_minutes(
+        self,
+        content: str,
+        client_name: str,
+        meeting_type: str,
+        industry: str,
+        user_name: str,
+        ai_summary: str = "",
+    ) -> str:
+        """Create Soomgo client meeting minutes page in Notion.
+
+        Args:
+            content: Full markdown content from LLM
+            client_name: Client company name
+            meeting_type: Meeting type (초기 상담/후속 미팅/계약 미팅)
+            industry: Client industry
+            user_name: User who created this
+            ai_summary: One-line AI summary
+
+        Returns:
+            URL of the created Notion page
+        """
+        from config import Config
+
+        if not Config.SOOMGO_NOTION_DB_ID:
+            raise ValueError("SOOMGO_NOTION_DB_ID is not configured")
+
+        timestamp = datetime.now().strftime("%Y-%m-%d")
+        title = f"{client_name} · {timestamp}"
+
+        properties = {
+            "제목": {"title": [{"text": {"content": title}}]},
+            "클라이언트명": {"select": {"name": client_name}},
+            "미팅 날짜": {"date": {"start": timestamp}},
+            "미팅 유형": {"select": {"name": meeting_type}},
+            "담당자": {"select": {"name": user_name}},
+            "업종": {"select": {"name": industry}},
+            "상태": {"select": {"name": "진행 중"}},
+        }
+
+        if ai_summary:
+            properties["AI 요약"] = {
+                "rich_text": [{"text": {"content": ai_summary[:2000]}}]
+            }
+
+        # Convert markdown content to Notion blocks
+        blocks = self._markdown_to_blocks(content)
+
+        new_page = self.client.pages.create(
+            parent={"database_id": Config.SOOMGO_NOTION_DB_ID},
+            icon={"type": "emoji", "emoji": "🤝"},
+            properties=properties,
+            children=blocks,
+        )
+        return new_page["url"]
+
+    def _clean_text(self, text: str) -> str:
+        """Strip markdown bold and HTML tags from text."""
+        text = self._strip_markdown_bold(text)
+        text = text.replace("<br>", " ").replace("<br/>", " ").replace("<br />", " ")
+        return text
+
+    def _callout_block(self, text: str, icon: str = "📌", color: str = "gray_background") -> dict:
+        """Create a callout block with icon and background color."""
+        return {
+            "object": "block",
+            "type": "callout",
+            "callout": {
+                "rich_text": [{"type": "text", "text": {"content": self._clean_text(text)}}],
+                "icon": {"emoji": icon},
+                "color": color,
+            }
+        }
+
+    def _divider_block(self) -> dict:
+        """Create a divider block."""
+        return {"object": "block", "type": "divider", "divider": {}}
+
+    def _markdown_to_blocks(self, markdown_text: str) -> list:
+        """Convert markdown text to Notion blocks with visual design.
+
+        Design pattern:
+        - Divider before each ## heading (section separation)
+        - > quote lines become callout blocks
+        - ## headings, ### subheadings preserved
+        - Bullet/numbered lists, todo items preserved
+        - Markdown bold and HTML tags cleaned
+        """
+        blocks = []
+        markdown_text = markdown_text.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+        lines = markdown_text.split("\n")
+        i = 0
+        has_content = False
+
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+
+            if not stripped:
+                i += 1
+                continue
+
+            # Heading 2 — add divider before (except first section)
+            if stripped.startswith("## "):
+                text = stripped[3:].strip()
+                if has_content:
+                    blocks.append(self._divider_block())
+                blocks.append(self._heading_block(text, level=2))
+                has_content = True
+                i += 1
+                continue
+
+            # Heading 3
+            if stripped.startswith("### "):
+                text = stripped[4:].strip()
+                blocks.append(self._heading_block(text, level=3))
+                has_content = True
+                i += 1
+                continue
+
+            # Quote/callout — > lines become callout blocks
+            if stripped.startswith("> "):
+                text = stripped[2:].strip()
+                text = self._clean_text(text)
+                # Detect icon hint from content
+                icon = "📌"
+                color = "gray_background"
+                if "⚠️" in text or "경고" in text or "주의" in text:
+                    icon = "⚠️"
+                    color = "yellow_background"
+                elif "📋" in text or "개요" in text:
+                    icon = "📋"
+                    color = "blue_background"
+                elif "🏃" in text or "브릿지" in text or "우리" in text:
+                    icon = "🏃"
+                    color = "green_background"
+                elif "🤝" in text or "고객" in text:
+                    icon = "🤝"
+                    color = "orange_background"
+                elif "💡" in text:
+                    icon = "💡"
+                    color = "yellow_background"
+                # Remove icon from text if it's at the start
+                for emoji in ["⚠️", "📋", "🏃", "🤝", "💡", "📌"]:
+                    if text.startswith(emoji):
+                        text = text[len(emoji):].strip()
+                blocks.append(self._callout_block(text, icon=icon, color=color))
+                has_content = True
+                i += 1
+                continue
+
+            # Todo item
+            if stripped.startswith("- [ ] ") or stripped.startswith("- [x] "):
+                checked = stripped.startswith("- [x] ")
+                text = stripped[6:].strip()
+                blocks.extend(self._todo_block(text))
+                if blocks:
+                    blocks[-1]["to_do"]["checked"] = checked
+                has_content = True
+                i += 1
+                continue
+
+            # Bullet list
+            if stripped.startswith("- ") or stripped.startswith("• "):
+                text = stripped[2:].strip()
+                text = self._clean_text(text)
+                blocks.extend(self._bulleted_list_block(text))
+                has_content = True
+                i += 1
+                continue
+
+            # Numbered list
+            if len(stripped) >= 3 and stripped[0].isdigit() and "." in stripped[:4]:
+                idx = stripped.index(".")
+                text = stripped[idx + 1 :].strip()
+                text = self._clean_text(text)
+                blocks.extend(self._numbered_list_block(text))
+                has_content = True
+                i += 1
+                continue
+
+            # Markdown horizontal rule
+            if stripped in ("---", "***", "___"):
+                blocks.append(self._divider_block())
+                i += 1
+                continue
+
+            # Table separator lines (e.g., :--- :----)
+            if stripped.startswith(":") or (stripped.startswith("|") and all(c in "|-: " for c in stripped)):
+                i += 1
+                continue
+
+            # Table rows (| delimited)
+            if stripped.startswith("|") and stripped.endswith("|"):
+                text = stripped.replace("|", " ").strip()
+                text = self._clean_text(text)
+                if text:
+                    blocks.extend(self._paragraph_block(text))
+                has_content = True
+                i += 1
+                continue
+
+            # Regular paragraph
+            text = self._clean_text(stripped)
+            blocks.extend(self._paragraph_block(text))
+            i += 1
+
+        return blocks
+
     def _todo_block(self, text: str) -> List[Dict[str, Any]]:
         """Create to-do block(s), chunking if necessary."""
         chunks = chunk_text(text)

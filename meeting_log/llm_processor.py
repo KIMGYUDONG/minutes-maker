@@ -215,5 +215,135 @@ Now generate the meeting minutes following the exact format above:"""
         # Handle the final section after loop ends
         if current_section and section_content:
             sections[current_section] = '\n'.join(section_content).strip()
-        
+
         return sections
+
+    def create_sales_meeting_minutes(
+        self,
+        transcript: str,
+        client_name: str,
+        manual_notes: Optional[str] = None
+    ) -> dict:
+        """Generate structured sales meeting minutes.
+
+        Returns dict with 'content' (full markdown) and 'ai_summary' (one-liner).
+        """
+        prompt = self._build_sales_prompt(transcript, client_name, manual_notes)
+        try:
+            response = self.model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,
+                    top_p=0.8,
+                    top_k=40,
+                    max_output_tokens=Config.GEMINI_MAX_OUTPUT_TOKENS,
+                )
+            )
+            try:
+                response_text = response.text
+            except ValueError:
+                response_text = "".join(part.text for part in response.parts)
+            return self._parse_sales_response(response_text)
+        except Exception as e:
+            raise RuntimeError(f"Failed to generate sales meeting minutes: {str(e)}")
+
+    def _build_sales_prompt(self, transcript: str, client_name: str, manual_notes: Optional[str]) -> str:
+        """Build prompt for sales meeting minutes."""
+        prompt = """You are an expert meeting minutes assistant for a Korean tech consulting team. Your task is to create comprehensive, well-structured sales meeting minutes in Korean.
+
+You will receive a transcript from a client meeting. The client company name is: {client_name}
+
+**IMPORTANT INSTRUCTIONS:**
+- If manual notes are provided, treat them as the AUTHORITATIVE source
+- Use the transcript to enrich details and provide context
+- Write in clear, professional Korean
+- Focus on client needs, proposed solutions, and action items
+- Extract client company info and industry from the conversation
+
+**OUTPUT FORMAT:**
+Structure your response EXACTLY as follows:
+
+> 📋 프로젝트 개요
+
+- **고객사:** [고객사명]
+- **프로젝트:** [프로젝트 내용]
+- **업종:** [업종]
+- **미팅 일시:** [날짜]
+- **참석자:** 브릿지 팀 ([담당자명]) / 고객사 [직책]
+
+## 🔴 고객 현황 & Pain Points
+
+> ⚠️ [핵심 문제를 한 줄로 요약]
+
+- **현재 시스템**
+    - [시스템 목록]
+- **핵심 문제점**
+    1. [문제점]
+    2. [문제점]
+
+## 📋 요구사항 정리
+### P0 - 최우선
+### P1 - 높음
+### P2 - 보통
+
+## 💡 제안 가능 솔루션
+[미팅에서 논의된 해결 방안, 기술적 접근 방식]
+
+## 💰 견적 & 비즈니스
+[비용 관련 논의, 계약 조건, 일정, 예산 범위]
+
+## ✅ 후속 액션
+
+> 🏃 **브릿지 팀**
+
+- [ ] 할 일 목록
+
+> 🤝 **고객사**
+
+- [ ] 할 일 목록
+
+---
+
+**AI_SUMMARY:**
+[한 줄로 미팅 핵심 요약 (50자 이내)]
+
+---
+
+**AUDIO TRANSCRIPT:**
+```
+{transcript}
+```
+
+**MANUAL NOTES:**
+```
+{manual_notes}
+```
+
+Now generate the sales meeting minutes following the exact format above:"""
+        return prompt.format(
+            client_name=client_name,
+            transcript=transcript if transcript else "No transcript available",
+            manual_notes=manual_notes if manual_notes else "No manual notes provided"
+        )
+
+    def _parse_sales_response(self, response_text: str) -> dict:
+        """Parse sales meeting LLM response into content + ai_summary."""
+        ai_summary = ""
+        content = response_text
+
+        if "AI_SUMMARY:" in response_text:
+            parts = response_text.split("AI_SUMMARY:")
+            content = parts[0].strip()
+            summary_part = parts[1].strip()
+            # Clean up: remove trailing --- and whitespace
+            ai_summary = summary_part.split("---")[0].strip().strip("[]")
+
+        # Remove trailing --- from content
+        if content.endswith("---"):
+            content = content[:-3].strip()
+
+        return {
+            "content": content,
+            "ai_summary": ai_summary[:200],
+            "raw_output": response_text,
+        }

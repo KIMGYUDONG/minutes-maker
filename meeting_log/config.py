@@ -18,15 +18,25 @@ class Config:
     GEMINI_MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "8192"))
     NOTION_TOKEN = os.getenv("NOTION_TOKEN", "")
     NOTION_PAGE_ID = os.getenv("NOTION_PAGE_ID", "")
+    SOOMGO_NOTION_DB_ID = os.getenv("SOOMGO_NOTION_DB_ID", "")
     
     # Whisper Configuration
     WHISPER_MODEL = os.getenv("WHISPER_MODEL", "large-v3")
     WHISPER_FALLBACK_MODEL = os.getenv("WHISPER_FALLBACK_MODEL", "large-v2")
-    
+
+    # Whisper HTTP Server (for Mac remote processing)
+    WHISPER_SERVER_URL = os.getenv("WHISPER_SERVER_URL", "http://100.71.112.103:8765")
+
     # Server Configuration
     STREAMLIT_SERVER_ADDRESS = os.getenv("STREAMLIT_SERVER_ADDRESS", "0.0.0.0")
     STREAMLIT_SERVER_PORT = int(os.getenv("STREAMLIT_SERVER_PORT", "8501"))
-    
+
+    # Telegram per-user chat IDs
+    TELEGRAM_USERS = {
+        "김규동": os.getenv("TELEGRAM_CHAT_ID_USER1", os.getenv("TELEGRAM_CHAT_ID", "")),
+        "임순호": os.getenv("TELEGRAM_CHAT_ID_USER2", ""),
+    }
+
     # Audio Configuration
     SUPPORTED_FORMATS = [".m4a", ".mp3", ".wav"]
     MAX_FILE_SIZE_MB = 500  # Maximum audio file size
@@ -58,7 +68,10 @@ class Config:
         
         if not cls.NOTION_PAGE_ID:
             errors.append("NOTION_PAGE_ID is not set")
-        
+
+        if not cls.WHISPER_SERVER_URL:
+            errors.append("WHISPER_SERVER_URL is not set")
+
         return errors
     
     @classmethod
