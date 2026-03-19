@@ -229,7 +229,8 @@ def main():
     st.markdown("---")
 
     if uploaded_file:
-        if st.button("🚀 회의록 생성", type="primary", use_container_width=True):
+        is_processing = st.session_state.get("worker_id") is not None
+        if st.button("🚀 회의록 생성", type="primary", use_container_width=True, disabled=is_processing):
             if Config.DEMO_MODE:
                 st.warning(
                     "🎭 **Demo Mode Active** - "
@@ -414,12 +415,17 @@ def process_audio_file(uploaded_file, manual_notes: str):
             progress_state["message"] = "노션에 저장 중..."
             progress_state["progress"] = 0.8
             notion_client = NotionClient()
-            url = notion_client.create_meeting_minutes(
-                summary=minutes.get('summary', ''),
-                key_updates=minutes.get('key_updates', ''),
-                discussion_log=minutes.get('discussion_log', ''),
-                action_items=minutes.get('action_items', '')
-            )
+            existing_url = notion_client.find_today_minutes()
+            if existing_url:
+                url = existing_url
+                print(f"[DEBUG] 오늘 회의록 이미 존재, 스킵: {url}"); sys.stdout.flush()
+            else:
+                url = notion_client.create_meeting_minutes(
+                    summary=minutes.get('summary', ''),
+                    key_updates=minutes.get('key_updates', ''),
+                    discussion_log=minutes.get('discussion_log', ''),
+                    action_items=minutes.get('action_items', '')
+                )
             progress_state["notion_url"] = url
             print(f"[DEBUG] Notion 저장 완료 → {url}"); sys.stdout.flush()
 

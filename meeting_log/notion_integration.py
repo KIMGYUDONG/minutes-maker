@@ -20,6 +20,20 @@ class NotionClient:
         
         self.client = Client(auth=Config.NOTION_TOKEN)
         self.page_id = Config.NOTION_PAGE_ID
+
+    def find_today_minutes(self) -> str | None:
+        """Check if today's meeting minutes page already exists. Returns URL if found."""
+        from datetime import date
+        today = date.today().isoformat()
+
+        results = self.client.databases.query(
+            database_id=self.page_id,
+            filter={"property": "날짜", "date": {"equals": today}}
+        )
+
+        if results.get("results"):
+            return results["results"][0].get("url")
+        return None
     
     def create_meeting_minutes(
         self,
